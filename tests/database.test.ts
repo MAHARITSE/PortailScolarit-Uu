@@ -14,17 +14,20 @@ import {
   buildCertificateVariables,
   buildDocumentQrPayload,
   buildNiveauFilterOptions,
+  buildStudentAssistedIndex,
   calculateAge,
   compareNiveauKeys,
   commitExcelImport,
   computeDashboardStats,
-  createYearWithPointedStudents,
+  createAcademicYear,
   enrichInscriptions,
   findNextNiveauId,
   formatCertificateNumber,
   formatDateFR,
   formatFieldValue,
+  generateNextInscriptionCodes,
   getBirthdateAnomalyReason,
+  getDefaultInitialAcademicSelection,
   getDependencyInfo,
   getDocumentRowValue,
   getLatestAnneeLabel,
@@ -32,6 +35,7 @@ import {
   getResolvedHeaderLines,
   getSampleInscription,
   getSeedDatabase,
+  getStudentLastInscription,
   getWorkbookSheetNames,
   importDatabaseJson,
   mergeDocumentTemplate,
@@ -43,6 +47,7 @@ import {
   normalizeNiveauKey,
   normalizePhone,
   normalizeSex,
+  searchStudentsForAssistedEntry,
   parseDateToISO,
   parseExcelWorkbook,
   sortAnneesDesc,
@@ -833,61 +838,112 @@ describe('Intégrité référentielle & Réinscription par lot', () => {
     assert.equal(res2.skippedCount, 5);
   });
 
-  it('propose l’année suivante, repère la dernière année de base, fait progresser les niveaux et crée une année avec les étudiants pointés', () => {
+  it('crée une nouvelle année universitaire vide sans dupliquer une année existante', () => {
     const db = getSeedDatabase();
     assert.equal(suggestNextAnneeLabel(db.annees), '2025-2026');
     const baseId = getLatestBaseAnneeId(db);
     const baseAnnee = db.annees.find((a) => a.id === baseId);
     assert.equal(baseAnnee?.annee, '2024-2025');
 
-    const l1Short = db.niveaux.find((n) => n.niveau === 'L1');
-    const l2Short = db.niveaux.find((n) => n.niveau === 'L2');
-    const l1Long = db.niveaux.find((n) => n.niveau === 'Licence 1');
-    const l2Long = db.niveaux.find((n) => n.niveau === 'Licence 2');
-    if (l1Short && l2Short) {
-      assert.equal(findNextNiveauId(db.niveaux, l1Short.id), l2Short.id);
-    }
-    if (l1Long && l2Long) {
-      assert.equal(findNextNiveauId(db.niveaux, l1Long.id), l2Long.id);
-    }
-
-    const baseRows = enrichInscriptions(db).filter((r) => r.idAnnee === baseId);
-    const picked = baseRows.slice(0, 3);
-    const created = createYearWithPointedStudents(db, {
-      targetAnneeLabel: '2025-2026',
-      entries: picked.map((row) => ({
-        idEtudiant: row.idEtudiant,
-        idMention: row.idMention,
-        idNiveau: findNextNiveauId(db.niveaux, row.idNiveau),
-        idParcours: null,
-      })),
-      autoGenerateNumbers: true,
-    });
-
-    assert.equal(created.isNewYear, true);
-    assert.equal(created.targetAnnee.annee, '2025-2026');
-    assert.equal(created.createdCount, 3);
-    assert.equal(created.skippedCount, 0);
-    assert.equal(created.nextDb.etudiants.length, db.etudiants.length);
-    assert.equal(created.nextDb.inscriptions.length, db.inscriptions.length + 3);
+    const created = createAcademicYear(db, ' 2025 - 2026 ');
+    assert.equal(created.created, true);
+    assert.equal(created.annee.annee, '2025-2026');
+    assert.equal(created.nextDb.annees.length, db.annees.length + 1);
+    // L'année est créée vide : aucune copie aveugle d'inscriptions
+    assert.equal(created.nextDb.inscriptions.length, db.inscriptions.length);
     assert.equal(suggestNextAnneeLabel(created.nextDb.annees), '2026-2027');
 
-    // Re-pointing same students into 2025-2026 must skip duplicates
-    const retry = createYearWithPointedStudents(created.nextDb, {
-      targetAnneeId: created.targetAnnee.id,
-      entries: [
-        {
-          idEtudiant: picked[0].idEtudiant,
-          idMention: picked[0].idMention,
-          idNiveau: picked[0].idNiveau,
-          idParcours: null,
-        },
-      ],
-      autoGenerateNumbers: true,
+    // Re-créer la même année retourne l'existante sans doublon
+    const existing = createAcademicYear(created.nextDb, '2025-2026');
+    assert.equal(existing.created, false);
+    assert.equal(existing.annee.id, created.annee.id);
+    assert.equal(existing.nextDb.annees.length, created.nextDb.annees.length);
+  });
+
+  it('propose la saisie assistée sur le nom à partir de la dernière inscription chronologique et avance le niveau', () => {
+    const seed = getSeedDatabase();
+    const { nextDb: dbWithNewYear, annee: annee2025 } = createAcademicYear(
+      seed,
+      '2025-2026'
+    );
+
+    // Recherche par préfixe du nom (insensible à la casse)
+    const results = searchStudentsForAssistedEntry(dbWithNewYear, 'elanir', {
+      targetAnneeId: annee2025.id,
     });
-    assert.equal(retry.isNewYear, false);
-    assert.equal(retry.createdCount, 0);
-    assert.equal(retry.skippedCount, 1);
+    assert.ok(results.length >= 1);
+    const match = results[0];
+    assert.equal(match.etudiant.nom, 'ELANIRIKO');
+    assert.ok(match.lastInscription);
+    assert.equal(match.lastInscription.annee, '2024-2025');
+    assert.equal(match.lastInscription.niveau, 'L1');
+    assert.equal(match.targetYearInscription, null);
+
+    // Le niveau proposé passe automatiquement de L1 à Licence 2
+    assert.ok(match.suggestedAssignment);
+    assert.equal(match.suggestedAssignment.hasProgression, true);
+    assert.equal(match.suggestedAssignment.sameNiveauLabel, 'L1');
+    assert.equal(match.suggestedAssignment.nextNiveauLabel, 'Licence 2');
+    assert.equal(
+      match.suggestedAssignment.recommendedNiveauLabel,
+      'Licence 2'
+    );
+    assert.equal(
+      match.suggestedAssignment.mentionLabel,
+      match.lastInscription.mention
+    );
+
+    // Vérifie le tri chronologique même si une inscription plus ancienne est ajoutée après dans le tableau
+    const annee2023 = dbWithNewYear.annees.find(
+      (a) => a.annee === '2023-2024'
+    )!;
+    const dbOutOfOrder = structuredClone(dbWithNewYear);
+    dbOutOfOrder.inscriptions.push({
+      id: 999999,
+      idEtudiant: match.etudiant.id,
+      idAnnee: annee2023.id,
+      idMention: match.lastInscription.idMention,
+      idNiveau: match.lastInscription.idNiveau,
+      idParcours: null,
+      reference: 'OLD23',
+      numInscription: 'OLD23',
+    });
+    const lastIns = getStudentLastInscription(
+      dbOutOfOrder,
+      match.etudiant.id,
+      annee2025.id
+    );
+    assert.equal(lastIns?.annee, '2024-2025');
+
+    // Une fois l'étudiant inscrit en 2025-2026, targetYearInscription est détectée
+    const codes = generateNextInscriptionCodes(dbWithNewYear, annee2025.id);
+    assert.ok(codes.reference.startsWith('25'));
+    dbOutOfOrder.inscriptions.push({
+      id: 1000000,
+      idEtudiant: match.etudiant.id,
+      idAnnee: annee2025.id,
+      idMention: match.suggestedAssignment.idMention,
+      idNiveau: match.suggestedAssignment.recommendedNiveauId,
+      idParcours: null,
+      reference: codes.reference,
+      numInscription: codes.numInscription,
+    });
+    const refreshedIndex = buildStudentAssistedIndex(
+      dbOutOfOrder,
+      annee2025.id
+    );
+    const updatedProfile = refreshedIndex.get(match.etudiant.id)!;
+    assert.equal(updatedProfile.lastInscription?.annee, '2024-2025');
+    assert.equal(updatedProfile.targetYearInscription?.annee, '2025-2026');
+    assert.equal(updatedProfile.targetYearInscription?.niveau, 'Licence 2');
+
+    // Vérifie les valeurs par défaut pour un tout nouvel étudiant
+    const defaults = getDefaultInitialAcademicSelection(dbWithNewYear);
+    assert.ok(defaults.idFaculte > 0);
+    assert.ok(defaults.idDomaine > 0);
+    assert.ok(defaults.idMention > 0);
+    const niv = dbWithNewYear.niveaux.find((n) => n.id === defaults.idNiveau);
+    assert.equal(normalizeNiveauKey(niv?.niveau ?? ''), 'licence 1');
   });
 });
 

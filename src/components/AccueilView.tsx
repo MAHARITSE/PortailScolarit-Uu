@@ -16,7 +16,6 @@ import {
   RotateCcw,
   Search,
   Trash2,
-  UserCheck,
   X,
 } from 'lucide-react';
 import {
@@ -48,7 +47,6 @@ interface AccueilViewProps {
   onUpdateDb: (nextDb: ScolariteDatabase, toastMessage?: string) => void;
   initialQuickFilter?: QuickFilterMode;
   onClearInitialFilter?: () => void;
-  onOpenYearPointer?: (mode: 'create' | 'populate', targetAnnee?: string) => void;
 }
 
 export type QuickFilterMode = 'all' | 'male' | 'female' | 'no_cin' | 'anomalies';
@@ -70,7 +68,6 @@ export function AccueilView({
   onUpdateDb,
   initialQuickFilter = 'all',
   onClearInitialFilter,
-  onOpenYearPointer,
 }: AccueilViewProps) {
   const [selectedFaculte, setSelectedFaculte] = useState<string>('');
   const [selectedDomaine, setSelectedDomaine] = useState<string>('');
@@ -543,17 +540,6 @@ export function AccueilView({
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
                 Exporter Excel
               </button>
-              {onOpenYearPointer && (
-                <button
-                  type="button"
-                  onClick={() => onOpenYearPointer('populate', effectiveAnnee)}
-                  title="Pointer un à un les étudiants depuis la dernière année sans ressaisir leurs informations"
-                  className="px-3.5 py-2 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 inline-flex items-center gap-1.5 whitespace-nowrap"
-                >
-                  <UserCheck className="w-4 h-4" />
-                  Pointer depuis une année
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => {
@@ -561,10 +547,11 @@ export function AccueilView({
                   setReinscribeId(null);
                   setModalOpen(true);
                 }}
+                title="Inscrire un nouvel étudiant ou réinscrire un ancien étudiant par saisie assistée sur le nom"
                 className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-md hover:bg-emerald-700 inline-flex items-center gap-1.5 whitespace-nowrap"
               >
                 <Plus className="w-4 h-4" />
-                Nouvel étudiant
+                Nouvelle inscription
               </button>
             </div>
           </div>
@@ -879,26 +866,20 @@ export function AccueilView({
                       colSpan={13}
                       className="px-6 py-12 text-center text-slate-500"
                     >
-                      {allEnriched.every((r) => r.annee !== effectiveAnnee) &&
-                      onOpenYearPointer ? (
-                        <div className="space-y-3">
+                      {allEnriched.every((r) => r.annee !== effectiveAnnee) ? (
+                        <div className="max-w-md mx-auto space-y-3">
                           <p className="font-medium text-slate-800">
-                            Aucune inscription enregistrée pour l&apos;année {effectiveAnnee}
+                            Aucune inscription enregistrée pour l&apos;année{' '}
+                            {effectiveAnnee}
                           </p>
-                          <p className="text-xs text-slate-500">
-                            Prenez la dernière année comme base et pointez un à un les étudiants à reconduire sans tout ressaisir.
+                          <p className="text-xs text-slate-500 leading-relaxed">
+                            Cliquez sur <strong>Nouvelle inscription</strong> et
+                            tapez le nom de l&apos;étudiant : la saisie assistée
+                            retrouve automatiquement sa dernière inscription
+                            (état civil, mention et passage au niveau
+                            supérieur).
                           </p>
                           <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onOpenYearPointer('populate', effectiveAnnee)
-                              }
-                              className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 inline-flex items-center gap-1.5"
-                            >
-                              <UserCheck className="w-4 h-4" />
-                              Pointer des étudiants depuis la dernière année
-                            </button>
                             <button
                               type="button"
                               onClick={() => {
@@ -906,10 +887,10 @@ export function AccueilView({
                                 setReinscribeId(null);
                                 setModalOpen(true);
                               }}
-                              className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 inline-flex items-center gap-1.5"
+                              className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-md hover:bg-emerald-700 inline-flex items-center gap-1.5"
                             >
                               <Plus className="w-4 h-4" />
-                              Nouvel étudiant
+                              Nouvelle inscription
                             </button>
                           </div>
                         </div>
@@ -1239,7 +1220,7 @@ export function AccueilView({
             setEditingRow(null);
             setReinscribeId(null);
           }}
-          onSave={(nextDb, msg) => {
+          onSave={(nextDb, msg, opts) => {
             onUpdateDb(nextDb, msg);
             if (certificateRow && editingRow?.idInscription === certificateRow.idInscription) {
               const refreshed = enrichInscriptions(nextDb).find(
@@ -1247,9 +1228,11 @@ export function AccueilView({
               );
               if (refreshed) setCertificateRow(refreshed);
             }
-            setModalOpen(false);
-            setEditingRow(null);
-            setReinscribeId(null);
+            if (!opts?.keepOpen) {
+              setModalOpen(false);
+              setEditingRow(null);
+              setReinscribeId(null);
+            }
           }}
         />
       )}

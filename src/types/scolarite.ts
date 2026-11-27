@@ -123,6 +123,38 @@ export interface EnrichedInscription {
   certificateToken: string;
 }
 
+export interface StudentAssistedAssignment {
+  idFaculte: number;
+  idDomaine: number;
+  idMention: number;
+  /** Niveau proposé par défaut (niveau supérieur si l'année cible est postérieure) */
+  recommendedNiveauId: number;
+  /** Niveau supérieur calculé (ex. L1 -> Licence 2) */
+  idNiveauNext: number;
+  /** Niveau identique à la dernière inscription (cas de maintien / redoublement) */
+  idNiveauSame: number;
+  /** Parcours compatible pour le niveau recommandé (null si aucun) */
+  idParcours: number | null;
+  faculteLabel: string;
+  domaineLabel: string;
+  mentionLabel: string;
+  recommendedNiveauLabel: string;
+  nextNiveauLabel: string;
+  sameNiveauLabel: string;
+  /** Vrai si un niveau supérieur distinct existe dans le référentiel */
+  hasProgression: boolean;
+}
+
+export interface StudentAssistedSuggestion {
+  etudiant: Etudiant;
+  /** Dernière inscription connue servant de base (hors année cible en priorité) */
+  lastInscription: EnrichedInscription | null;
+  /** Inscription déjà enregistrée dans l'année cible sélectionnée, le cas échéant */
+  targetYearInscription: EnrichedInscription | null;
+  /** Proposition d'affectation académique calculée sur la base de la dernière inscription */
+  suggestedAssignment: StudentAssistedAssignment | null;
+}
+
 export type NavigationView =
   | 'accueil'
   | 'dashboard'

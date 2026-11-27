@@ -25,6 +25,8 @@ import {
   SaveResult,
   SavedDocumentProfile,
   ScolariteDatabase,
+  StudentAssistedAssignment,
+  StudentAssistedSuggestion,
   TableEntityKey,
 } from '../types/scolarite';
 
@@ -2425,100 +2427,387 @@ export function findNextNiveauId(
   return (styled ?? candidates[0]).id;
 }
 
-export function createYearWithPointedStudents(
+/**
+ * Crée une nouvelle année universitaire vide (ou retrouve l'année existante
+ * si le même libellé est déjà présent dans le référentiel).
+ */
+export function createAcademicYear(
   db: ScolariteDatabase,
-  params: {
-    targetAnneeLabel?: string;
-    targetAnneeId?: number;
-    entries: Array<{
-      idEtudiant: number;
-      idMention: number;
-      idNiveau: number;
-      idParcours: number | null;
-    }>;
-    autoGenerateNumbers: boolean;
-  }
+  anneeLabel: string
 ): {
   nextDb: ScolariteDatabase;
-  targetAnnee: AnneeUniversitaire;
-  isNewYear: boolean;
-  createdCount: number;
-  skippedCount: number;
+  annee: AnneeUniversitaire;
+  created: boolean;
 } {
+  const cleanLabel = anneeLabel
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*-\s*/g, '-');
+
+  if (!cleanLabel) {
+    throw new Error("Veuillez indiquer un libellé d'année universitaire.");
+  }
+
+  const existing = db.annees.find(
+    (a) => a.annee.trim().toLowerCase() === cleanLabel.toLowerCase()
+  );
+  if (existing) {
+    return { nextDb: db, annee: existing, created: false };
+  }
+
   const nextDb = structuredClone(db);
-  const cleanLabel = (params.targetAnneeLabel ?? '').trim();
+  const annee: AnneeUniversitaire = {
+    id: getNextId(nextDb.annees),
+    annee: cleanLabel,
+  };
+  nextDb.annees.push(annee);
+  return { nextDb, annee, created: true };
+}
 
-  let targetAnnee =
-    (params.targetAnneeId
-      ? nextDb.annees.find((a) => a.id === params.targetAnneeId)
-      : undefined) ??
-    (cleanLabel
-      ? nextDb.annees.find(
-          (a) => a.annee.trim().toLowerCase() === cleanLabel.toLowerCase()
-        )
-      : undefined);
+/**
+ * Génère un couple (référence, numéro d'inscription) unique pour l'année cible.
+ */
+export function generateNextInscriptionCodes(
+  db: ScolariteDatabase,
+  idAnnee: number
+): { reference: string; numInscription: string } {
+  const targetAnnee = db.annees.find((a) => a.id === idAnnee);
+  const yearDigits = (targetAnnee?.annee ?? '').slice(0, 4).replace(/\D/g, '');
+  const yearPrefix = (yearDigits || String(new Date().getFullYear())).slice(-2);
 
-  let isNewYear = false;
-  if (!targetAnnee) {
-    if (!cleanLabel) {
-      throw new Error("Veuillez indiquer un libellé d'année universitaire.");
-    }
-    targetAnnee = {
-      id: getNextId(nextDb.annees),
-      annee: cleanLabel,
-    };
-    nextDb.annees.push(targetAnnee);
-    isNewYear = true;
+  const existingRefs = new Set(
+    db.inscriptions.map((i) => i.reference.trim().toLowerCase()).filter(Boolean)
+  );
+  const existingNums = new Set(
+    db.inscriptions
+      .map((i) => i.numInscription.trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  let seq = getNextId(db.inscriptions);
+  let reference = '';
+  let numInscription = '';
+  do {
+    reference = `${yearPrefix}${String(seq).padStart(4, '0')}`;
+    numInscription = String(seq).padStart(6, '0');
+    seq++;
+  } while (
+    existingRefs.has(reference.toLowerCase()) ||
+    existingNums.has(numInscription.toLowerCase())
+  );
+
+  return { reference, numInscription };
+}
+
+function normalizeAssistedSearchText(raw: string | null | undefined): string {
+  return (raw ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function compareInscriptionsMostRecentFirst(
+  a: EnrichedInscription,
+  b: EnrichedInscription
+): number {
+  const yearDiff = anneeStartYear(b.annee) - anneeStartYear(a.annee);
+  if (yearDiff !== 0) return yearDiff;
+  const nivDiff = compareNiveauKeys(
+    normalizeNiveauKey(b.niveau),
+    normalizeNiveauKey(a.niveau)
+  );
+  if (nivDiff !== 0) return nivDiff;
+  return b.idInscription - a.idInscription;
+}
+
+/**
+ * Résout un parcours compatible pour le couple (mention, niveau) cible à partir
+ * de la dernière inscription (conserve le parcours si identique ou de même nom).
+ */
+export function resolveCompatibleParcoursId(
+  db: ScolariteDatabase,
+  lastInscription: EnrichedInscription | null,
+  targetMentionId: number,
+  targetNiveauId: number
+): number | null {
+  if (!lastInscription || !lastInscription.idParcours) return null;
+  if (
+    lastInscription.idMention === targetMentionId &&
+    lastInscription.idNiveau === targetNiveauId
+  ) {
+    return db.parcours.some((p) => p.id === lastInscription.idParcours)
+      ? lastInscription.idParcours
+      : null;
+  }
+  const prevParcours = db.parcours.find(
+    (p) => p.id === lastInscription.idParcours
+  );
+  if (!prevParcours) return null;
+  const prevName = prevParcours.parcours.trim().toLowerCase();
+  const match = db.parcours.find(
+    (p) =>
+      p.idMention === targetMentionId &&
+      p.idNiveau === targetNiveauId &&
+      p.parcours.trim().toLowerCase() === prevName
+  );
+  return match?.id ?? null;
+}
+
+/**
+ * Construit un index des étudiants avec leur dernière inscription connue et
+ * la proposition d'affectation pour l'année cible (passage au niveau supérieur).
+ */
+export function buildStudentAssistedIndex(
+  db: ScolariteDatabase,
+  targetAnneeId?: number
+): Map<number, StudentAssistedSuggestion> {
+  const allEnriched = enrichInscriptions(db);
+  const byStudent = new Map<number, EnrichedInscription[]>();
+  for (const ins of allEnriched) {
+    const list = byStudent.get(ins.idEtudiant);
+    if (list) list.push(ins);
+    else byStudent.set(ins.idEtudiant, [ins]);
+  }
+  for (const list of byStudent.values()) {
+    list.sort(compareInscriptionsMostRecentFirst);
   }
 
-  let createdCount = 0;
-  let skippedCount = 0;
-  let nextInsId = getNextId(nextDb.inscriptions);
-  const yearShort = targetAnnee.annee.slice(0, 4).replace(/\D/g, '') || '2025';
-  const existingRefs = new Set(nextDb.inscriptions.map((i) => i.reference));
-  const existingNums = new Set(nextDb.inscriptions.map((i) => i.numInscription));
-  const seenStudents = new Set<number>();
+  const targetAnneeObj = targetAnneeId
+    ? db.annees.find((a) => a.id === targetAnneeId)
+    : undefined;
+  const niveauById = new Map(db.niveaux.map((n) => [n.id, n]));
 
-  for (const entry of params.entries) {
-    if (seenStudents.has(entry.idEtudiant)) continue;
-    seenStudents.add(entry.idEtudiant);
+  const index = new Map<number, StudentAssistedSuggestion>();
 
-    const alreadyInYear = nextDb.inscriptions.some(
-      (i) =>
-        i.idEtudiant === entry.idEtudiant && i.idAnnee === targetAnnee!.id
-    );
-    if (alreadyInYear) {
-      skippedCount++;
-      continue;
+  for (const etudiant of db.etudiants) {
+    const inscriptions = byStudent.get(etudiant.id) ?? [];
+    const targetYearInscription = targetAnneeId
+      ? inscriptions.find((i) => i.idAnnee === targetAnneeId) ?? null
+      : null;
+    const lastInscription =
+      (targetAnneeId
+        ? inscriptions.find((i) => i.idAnnee !== targetAnneeId)
+        : inscriptions[0]) ??
+      inscriptions[0] ??
+      null;
+
+    let suggestedAssignment: StudentAssistedAssignment | null = null;
+    if (lastInscription) {
+      const idNiveauSame = lastInscription.idNiveau;
+      const idNiveauNext = findNextNiveauId(db.niveaux, idNiveauSame);
+      const hasProgression = idNiveauNext !== idNiveauSame;
+
+      let isNewerYear = true;
+      if (targetAnneeObj) {
+        const targetStart = anneeStartYear(targetAnneeObj.annee);
+        const baseStart = anneeStartYear(lastInscription.annee);
+        isNewerYear =
+          targetStart > 0 && baseStart > 0
+            ? targetStart > baseStart
+            : targetAnneeObj.id !== lastInscription.idAnnee;
+      }
+
+      const recommendedNiveauId = isNewerYear ? idNiveauNext : idNiveauSame;
+      const sameNiveauLabel =
+        niveauById.get(idNiveauSame)?.niveau ?? lastInscription.niveau;
+      const nextNiveauLabel =
+        niveauById.get(idNiveauNext)?.niveau ?? sameNiveauLabel;
+      const recommendedNiveauLabel =
+        niveauById.get(recommendedNiveauId)?.niveau ?? sameNiveauLabel;
+      const idParcours = resolveCompatibleParcoursId(
+        db,
+        lastInscription,
+        lastInscription.idMention,
+        recommendedNiveauId
+      );
+
+      suggestedAssignment = {
+        idFaculte: lastInscription.idFaculte,
+        idDomaine: lastInscription.idDomaine,
+        idMention: lastInscription.idMention,
+        recommendedNiveauId,
+        idNiveauNext,
+        idNiveauSame,
+        idParcours,
+        faculteLabel: lastInscription.faculte,
+        domaineLabel: lastInscription.domaine,
+        mentionLabel: lastInscription.mention,
+        recommendedNiveauLabel,
+        nextNiveauLabel,
+        sameNiveauLabel,
+        hasProgression,
+      };
     }
 
-    let reference = '';
-    let numInscription = '';
-    if (params.autoGenerateNumbers) {
-      let seq = nextInsId;
-      do {
-        reference = `${yearShort.slice(-2)}${String(seq).padStart(4, '0')}`;
-        numInscription = String(seq).padStart(6, '0');
-        seq++;
-      } while (existingRefs.has(reference) || existingNums.has(numInscription));
-      existingRefs.add(reference);
-      existingNums.add(numInscription);
-    }
-
-    nextDb.inscriptions.push({
-      id: nextInsId++,
-      idEtudiant: entry.idEtudiant,
-      idAnnee: targetAnnee.id,
-      idMention: entry.idMention,
-      idNiveau: entry.idNiveau,
-      idParcours: entry.idParcours,
-      reference,
-      numInscription,
+    index.set(etudiant.id, {
+      etudiant,
+      lastInscription,
+      targetYearInscription,
+      suggestedAssignment,
     });
-    createdCount++;
   }
 
-  return { nextDb, targetAnnee, isNewYear, createdCount, skippedCount };
+  return index;
+}
+
+/**
+ * Retourne la dernière inscription chronologique d'un étudiant (hors `excludeAnneeId`
+ * en priorité lorsqu'une année cible est fournie).
+ */
+export function getStudentLastInscription(
+  db: ScolariteDatabase,
+  idEtudiant: number,
+  excludeAnneeId?: number
+): EnrichedInscription | null {
+  const index = buildStudentAssistedIndex(db, excludeAnneeId);
+  return index.get(idEtudiant)?.lastInscription ?? null;
+}
+
+/**
+ * Recherche assistée sur le nom (et prénom / CIN / matricule) pour l'autocomplétion
+ * du formulaire d'inscription sur la base de la dernière inscription.
+ */
+export function searchStudentsForAssistedEntry(
+  db: ScolariteDatabase,
+  query: string,
+  options?: {
+    targetAnneeId?: number;
+    limit?: number;
+    index?: Map<number, StudentAssistedSuggestion>;
+  }
+): StudentAssistedSuggestion[] {
+  const qNorm = normalizeAssistedSearchText(query);
+  if (!qNorm) return [];
+
+  const limit = options?.limit ?? 8;
+  const tokens = qNorm.split(' ').filter(Boolean);
+  const qCompact = qNorm.replace(/\s+/g, '');
+  const index =
+    options?.index ?? buildStudentAssistedIndex(db, options?.targetAnneeId);
+
+  const scored: Array<{ item: StudentAssistedSuggestion; score: number }> = [];
+
+  for (const item of index.values()) {
+    const { etudiant, lastInscription } = item;
+    const nomNorm = normalizeAssistedSearchText(etudiant.nom);
+    const prenomNorm = normalizeAssistedSearchText(etudiant.prenom);
+    const fullNorm = `${nomNorm} ${prenomNorm}`.trim();
+    const cinSpaced = normalizeAssistedSearchText(etudiant.numeroCin);
+    const cinCompact = normalizeCin(etudiant.numeroCin).toLowerCase();
+    const refNorm = normalizeAssistedSearchText(lastInscription?.reference);
+    const numInsNorm = normalizeAssistedSearchText(
+      lastInscription?.numInscription
+    );
+
+    const haystack = `${fullNorm} ${cinSpaced} ${cinCompact} ${refNorm} ${numInsNorm}`;
+    const matchesAllTokens = tokens.every((tok) => haystack.includes(tok));
+    const matchesCompactCin =
+      qCompact.length >= 4 && cinCompact.includes(qCompact);
+
+    if (!matchesAllTokens && !matchesCompactCin) continue;
+
+    let score = 5;
+    if (nomNorm === qNorm || fullNorm === qNorm) {
+      score = 0;
+    } else if (nomNorm.startsWith(qNorm)) {
+      score = 1;
+    } else if (fullNorm.startsWith(qNorm)) {
+      score = 2;
+    } else if (
+      nomNorm.split(' ').some((w) => w.startsWith(tokens[0])) ||
+      prenomNorm.split(' ').some((w) => w.startsWith(tokens[0]))
+    ) {
+      score = 3;
+    } else if (
+      (qCompact.length >= 4 && cinCompact.startsWith(qCompact)) ||
+      refNorm === qNorm ||
+      numInsNorm === qNorm
+    ) {
+      score = 4;
+    }
+
+    scored.push({ item, score });
+  }
+
+  scored.sort((a, b) => {
+    if (a.score !== b.score) return a.score - b.score;
+    const aEnrolled = a.item.targetYearInscription ? 1 : 0;
+    const bEnrolled = b.item.targetYearInscription ? 1 : 0;
+    if (aEnrolled !== bEnrolled) return aEnrolled - bEnrolled;
+    const aHasLast = a.item.lastInscription ? 1 : 0;
+    const bHasLast = b.item.lastInscription ? 1 : 0;
+    if (aHasLast !== bHasLast) return bHasLast - aHasLast;
+    const aYear = anneeStartYear(a.item.lastInscription?.annee);
+    const bYear = anneeStartYear(b.item.lastInscription?.annee);
+    if (aYear !== bYear) return bYear - aYear;
+    const aName = `${a.item.etudiant.nom} ${a.item.etudiant.prenom}`;
+    const bName = `${b.item.etudiant.nom} ${b.item.etudiant.prenom}`;
+    return aName.localeCompare(bName, 'fr', { sensitivity: 'base' });
+  });
+
+  return scored.slice(0, limit).map((s) => s.item);
+}
+
+/**
+ * Valeurs académiques par défaut pertinentes pour une première inscription
+ * (faculté possédant réellement des domaines/mentions et niveau initial L1).
+ */
+export function getDefaultInitialAcademicSelection(db: ScolariteDatabase): {
+  idFaculte: number;
+  idDomaine: number;
+  idMention: number;
+  idNiveau: number;
+} {
+  const domaineIdsWithMentions = new Set(db.mentions.map((m) => m.idDomaine));
+  const faculteIdsWithBranches = new Set(
+    db.domaines
+      .filter((d) => domaineIdsWithMentions.has(d.id))
+      .map((d) => d.idFaculte)
+  );
+
+  // Préfère la faculté la plus représentée parmi celles ayant des mentions
+  const mentionToFaculte = new Map<number, number>();
+  const domaineById = new Map(db.domaines.map((d) => [d.id, d]));
+  for (const m of db.mentions) {
+    const dom = domaineById.get(m.idDomaine);
+    if (dom) mentionToFaculte.set(m.id, dom.idFaculte);
+  }
+  const facCounts = new Map<number, number>();
+  for (const ins of db.inscriptions) {
+    const facId = mentionToFaculte.get(ins.idMention);
+    if (facId) facCounts.set(facId, (facCounts.get(facId) ?? 0) + 1);
+  }
+
+  const validFacultes = db.facultes.filter((f) =>
+    faculteIdsWithBranches.has(f.id)
+  );
+  validFacultes.sort(
+    (a, b) => (facCounts.get(b.id) ?? 0) - (facCounts.get(a.id) ?? 0)
+  );
+
+  const chosenFaculte = validFacultes[0] ?? db.facultes[0];
+  const idFaculte = chosenFaculte?.id ?? 0;
+
+  const chosenDomaine =
+    db.domaines.find(
+      (d) => d.idFaculte === idFaculte && domaineIdsWithMentions.has(d.id)
+    ) ??
+    db.domaines.find((d) => d.idFaculte === idFaculte) ??
+    db.domaines[0];
+  const idDomaine = chosenDomaine?.id ?? 0;
+
+  const chosenMention =
+    db.mentions.find((m) => m.idDomaine === idDomaine) ?? db.mentions[0];
+  const idMention = chosenMention?.id ?? 0;
+
+  const l1Candidate =
+    db.niveaux.find((n) => normalizeNiveauKey(n.niveau) === 'licence 1') ??
+    db.niveaux[0];
+  const idNiveau = l1Candidate?.id ?? 0;
+
+  return { idFaculte, idDomaine, idMention, idNiveau };
 }
 
 export function exportInscriptionsToXlsx(
