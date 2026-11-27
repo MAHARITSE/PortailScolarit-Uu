@@ -18,12 +18,14 @@ import {
   X,
 } from 'lucide-react';
 import {
+  buildNiveauFilterOptions,
   enrichInscriptions,
   exportInscriptionsToCsv,
   exportInscriptionsToXlsx,
   formatDateFR,
   getBirthdateAnomalyReason,
   loadCertificateSettings,
+  normalizeNiveauKey,
 } from '../services/database';
 import { EnrichedInscription, ScolariteDatabase } from '../types/scolarite';
 import { BatchReinscriptionModal } from './BatchReinscriptionModal';
@@ -33,6 +35,8 @@ import { StudentInscriptionModal } from './StudentInscriptionModal';
 
 interface AccueilViewProps {
   db: ScolariteDatabase;
+  /** Année universitaire de travail (une seule à la fois) */
+  anneeActive: string;
   onUpdateDb: (nextDb: ScolariteDatabase, toastMessage?: string) => void;
   initialQuickFilter?: QuickFilterMode;
   onClearInitialFilter?: () => void;
@@ -53,13 +57,11 @@ type SortKey =
 
 export function AccueilView({
   db,
+  anneeActive,
   onUpdateDb,
   initialQuickFilter = 'all',
   onClearInitialFilter,
 }: AccueilViewProps) {
-  const [selectedAnnee, setSelectedAnnee] = useState<string>(
-    db.annees[0]?.annee ?? 'ALL'
-  );
   const [selectedFaculte, setSelectedFaculte] = useState<string>('');
   const [selectedDomaine, setSelectedDomaine] = useState<string>('');
   const [selectedMention, setSelectedMention] = useState<string>('');
@@ -109,14 +111,8 @@ export function AccueilView({
   const certSettings = useMemo(() => loadCertificateSettings(), []);
   const allEnriched = useMemo(() => enrichInscriptions(db), [db]);
 
-  // Cascading filter options
-  const anneeOptions = useMemo(() => db.annees.map((a) => a.annee), [db.annees]);
-
-  const effectiveAnnee = useMemo(() => {
-    if (selectedAnnee === 'ALL') return 'ALL';
-    if (anneeOptions.includes(selectedAnnee)) return selectedAnnee;
-    return anneeOptions[0] ?? 'ALL';
-  }, [anneeOptions, selectedAnnee]);
+  // Une seule année universitaire de travail : celle choisie dans l'en-tête
+  const effectiveAnnee = anneeActive;
 
   const faculteOptions = useMemo(
     () => db.facultes.map((f) => f.faculte).sort((a, b) => a.localeCompare(b, 'fr')),
@@ -147,20 +143,39 @@ export function AccueilView({
       .sort((a, b) => a.localeCompare(b, 'fr'));
   }, [db.facultes, db.domaines, db.mentions, selectedFaculte, selectedDomaine]);
 
-  const niveauOptions = useMemo(() => db.niveaux.map((n) => n.niveau), [db.niveaux]);
+  // Niveaux présents dans les inscriptions, alias fusionnés ("L1" ≡ "Licence 1")
+  const niveauOptions = useMemo(
+    () => buildNiveauFilterOptions(allEnriched.map((row) => row.niveau)),
+    [allEnriched]
+  );
+
+  const selectedNiveauIds = useMemo(
+    () =>
+      new Set(
+        db.niveaux
+          .filter((n) => normalizeNiveauKey(n.niveau) === selectedNiveau)
+          .map((n) => n.id)
+      ),
+    [db.niveaux, selectedNiveau]
+  );
+
+  const selectedNiveauLabel = useMemo(
+    () =>
+      niveauOptions.find((option) => option.key === selectedNiveau)?.label ?? '',
+    [niveauOptions, selectedNiveau]
+  );
 
   const parcoursOptions = useMemo(() => {
     const menObj = db.mentions.find((m) => m.mention === selectedMention);
-    const nivObj = db.niveaux.find((n) => n.niveau === selectedNiveau);
     return db.parcours
       .filter(
         (p) =>
           (!menObj || p.idMention === menObj.id) &&
-          (!nivObj || p.idNiveau === nivObj.id)
+          (!selectedNiveau || selectedNiveauIds.has(p.idNiveau))
       )
       .map((p) => p.parcours)
       .sort((a, b) => a.localeCompare(b, 'fr'));
-  }, [db.mentions, db.niveaux, db.parcours, selectedMention, selectedNiveau]);
+  }, [db.mentions, db.parcours, selectedMention, selectedNiveau, selectedNiveauIds]);
 
   // Base filtered rows before quick filter (used to compute chip counts)
   const baseFilteredRows = useMemo(() => {
@@ -171,11 +186,11 @@ export function AccueilView({
       .filter(Boolean);
 
     return allEnriched.filter((row) => {
-      if (effectiveAnnee !== 'ALL' && row.annee !== effectiveAnnee) return false;
+      if (row.annee !== effectiveAnnee) return false;
       if (selectedFaculte && row.faculte !== selectedFaculte) return false;
       if (selectedDomaine && row.domaine !== selectedDomaine) return false;
       if (selectedMention && row.mention !== selectedMention) return false;
-      if (selectedNiveau && row.niveau !== selectedNiveau) return false;
+      if (selectedNiveau && normalizeNiveauKey(row.niveau) !== selectedNiveau) return false;
       if (selectedParcours && row.parcours !== selectedParcours) return false;
 
       if (tokens.length > 0) {
@@ -274,7 +289,6 @@ export function AccueilView({
   };
 
   const resetFilters = () => {
-    setSelectedAnnee(db.annees[0]?.annee ?? 'ALL');
     setSelectedFaculte('');
     setSelectedDomaine('');
     setSelectedMention('');
@@ -397,7 +411,7 @@ export function AccueilView({
           <div className="px-5 py-4">
             <p className="text-xs font-medium text-slate-500">Année universitaire</p>
             <p className="mt-1 text-2xl font-bold text-blue-700 tabular-nums font-display">
-              {effectiveAnnee === 'ALL' ? 'Toutes' : effectiveAnnee || '—'}
+              {effectiveAnnee || '—'}
             </p>
           </div>
         </div>
@@ -483,24 +497,7 @@ export function AccueilView({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-1">
-            <select
-              value={effectiveAnnee}
-              onChange={(e) => {
-                setSelectedAnnee(e.target.value);
-                setPage(1);
-              }}
-              aria-label="Année universitaire"
-              className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-md bg-white text-slate-700"
-            >
-              <option value="ALL">Toutes les années</option>
-              {anneeOptions.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
-            </select>
-
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-1">
             <select
               value={selectedFaculte}
               onChange={(e) => {
@@ -569,9 +566,9 @@ export function AccueilView({
               className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-md bg-white text-slate-700"
             >
               <option value="">Tous les niveaux</option>
-              {niveauOptions.map((n) => (
-                <option key={n} value={n}>
-                  {n}
+              {niveauOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label} ({option.count})
                 </option>
               ))}
             </select>
@@ -791,17 +788,6 @@ export function AccueilView({
                       Niveau <ArrowUpDown className="w-3 h-3" />
                     </button>
                   </th>
-                  {effectiveAnnee === 'ALL' && (
-                    <th className="px-3 py-2.5 whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => toggleSort('annee')}
-                        className="inline-flex items-center gap-1 hover:text-slate-900"
-                      >
-                        Année <ArrowUpDown className="w-3 h-3" />
-                      </button>
-                    </th>
-                  )}
                   <th className="px-3 py-2.5 whitespace-nowrap text-right">Actions</th>
                 </tr>
               </thead>
@@ -809,7 +795,7 @@ export function AccueilView({
                 {paginatedRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={effectiveAnnee === 'ALL' ? 14 : 13}
+                      colSpan={13}
                       className="px-6 py-12 text-center text-slate-500"
                     >
                       <p className="font-medium text-slate-700">Aucun étudiant trouvé</p>
@@ -910,11 +896,6 @@ export function AccueilView({
                             </span>
                           )}
                         </td>
-                        {effectiveAnnee === 'ALL' && (
-                          <td className="px-3 py-2 font-mono text-xs text-slate-600 tabular-nums whitespace-nowrap">
-                            {row.annee}
-                          </td>
-                        )}
                         <td className="px-3 py-2 whitespace-nowrap text-right">
                           <div className="inline-flex items-center gap-0.5">
                             <button
@@ -1035,10 +1016,10 @@ export function AccueilView({
                 Liste officielle des étudiants inscrits
               </h2>
               <p className="text-xs text-slate-600">
-                Année : {effectiveAnnee === 'ALL' ? 'Toutes' : effectiveAnnee}
+                Année : {effectiveAnnee || '—'}
                 {selectedFaculte ? ` · ${selectedFaculte}` : ''}
                 {selectedMention ? ` · ${selectedMention}` : ''}
-                {selectedNiveau ? ` · ${selectedNiveau}` : ''} — {filteredRows.length} étudiant(s)
+                {selectedNiveau ? ` · ${selectedNiveauLabel}` : ''} — {filteredRows.length} étudiant(s)
               </p>
             </div>
             <span className="text-xs font-mono tabular-nums">

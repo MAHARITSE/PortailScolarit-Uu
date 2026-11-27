@@ -14,9 +14,11 @@ import {
   X,
 } from 'lucide-react';
 import {
+  buildNiveauFilterOptions,
   enrichInscriptions,
   formatDateFR,
   loadCertificateSettings,
+  normalizeNiveauKey,
   saveCertificateSettings,
   verifyCertificateQuery,
 } from '../services/database';
@@ -29,14 +31,16 @@ import { CertificateDocument } from './CertificateDocument';
 
 interface CertificatsViewProps {
   db: ScolariteDatabase;
+  /** Année universitaire de travail (une seule à la fois) */
+  anneeActive: string;
 }
 
 const PAGE_SIZE = 50;
 const CHUNK_SIZE = 150;
 
-export function CertificatsView({ db }: CertificatsViewProps) {
+export function CertificatsView({ db, anneeActive }: CertificatsViewProps) {
   const [search, setSearch] = useState('');
-  const [annee, setAnnee] = useState(db.annees[0]?.annee || 'ALL');
+  const annee = anneeActive;
   const [mention, setMention] = useState('ALL');
   const [niveau, setNiveau] = useState('ALL');
   const [page, setPage] = useState(1);
@@ -59,12 +63,42 @@ export function CertificatsView({ db }: CertificatsViewProps) {
 
   const allEnriched = useMemo(() => enrichInscriptions(db), [db]);
 
+  // Niveaux réellement proposés : issus des inscriptions de l'année / mention
+  // sélectionnées, alias fusionnés ("L1" ≡ "Licence 1") et triés.
+  const niveauScope = useMemo(
+    () =>
+      allEnriched.filter((item) => {
+        if (item.annee !== annee) return false;
+        if (mention !== 'ALL' && item.mention !== mention) return false;
+        return true;
+      }),
+    [allEnriched, annee, mention]
+  );
+
+  const niveauOptions = useMemo(
+    () => buildNiveauFilterOptions(niveauScope.map((item) => item.niveau)),
+    [niveauScope]
+  );
+
+  // Mentions réellement présentes pour l'année de travail et le niveau choisi
+  const mentionOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of allEnriched) {
+      if (item.annee !== annee) continue;
+      if (niveau !== 'ALL' && normalizeNiveauKey(item.niveau) !== niveau) continue;
+      counts.set(item.mention, (counts.get(item.mention) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], 'fr'))
+      .map(([label, count]) => ({ label, count }));
+  }, [allEnriched, annee, niveau]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return allEnriched.filter((item) => {
-      if (annee !== 'ALL' && item.annee !== annee) return false;
+      if (item.annee !== annee) return false;
       if (mention !== 'ALL' && item.mention !== mention) return false;
-      if (niveau !== 'ALL' && item.niveau !== niveau) return false;
+      if (niveau !== 'ALL' && normalizeNiveauKey(item.niveau) !== niveau) return false;
       if (!q) return true;
       return (
         item.nom.toLowerCase().includes(q) ||
@@ -78,6 +112,22 @@ export function CertificatsView({ db }: CertificatsViewProps) {
   useEffect(() => {
     setPage(1);
   }, [search, annee, mention, niveau]);
+
+  // La mention choisie n'existe plus dans le périmètre année / niveau courant
+  useEffect(() => {
+    if (mention === 'ALL') return;
+    if (!mentionOptions.some((option) => option.label === mention)) {
+      setMention('ALL');
+    }
+  }, [mention, mentionOptions]);
+
+  // Le niveau choisi n'existe plus dans le périmètre année / mention courant
+  useEffect(() => {
+    if (niveau === 'ALL') return;
+    if (!niveauOptions.some((option) => option.key === niveau)) {
+      setNiveau('ALL');
+    }
+  }, [niveau, niveauOptions]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -275,7 +325,7 @@ export function CertificatsView({ db }: CertificatsViewProps) {
           )}
 
           {/* Filters */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="lg:col-span-2 relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -288,27 +338,14 @@ export function CertificatsView({ db }: CertificatsViewProps) {
             </div>
 
             <select
-              value={annee}
-              onChange={(e) => setAnnee(e.target.value)}
-              className="px-3 py-1.5 text-xs border border-slate-300 rounded-md bg-white"
-            >
-              <option value="ALL">Toutes les années</option>
-              {db.annees.map((a) => (
-                <option key={a.id} value={a.annee}>
-                  {a.annee}
-                </option>
-              ))}
-            </select>
-
-            <select
               value={mention}
               onChange={(e) => setMention(e.target.value)}
               className="px-3 py-1.5 text-xs border border-slate-300 rounded-md bg-white"
             >
               <option value="ALL">Toutes les mentions</option>
-              {db.mentions.map((m) => (
-                <option key={m.id} value={m.mention}>
-                  {m.mention}
+              {mentionOptions.map((option) => (
+                <option key={option.label} value={option.label}>
+                  {option.label} ({option.count})
                 </option>
               ))}
             </select>
@@ -319,9 +356,9 @@ export function CertificatsView({ db }: CertificatsViewProps) {
               className="px-3 py-1.5 text-xs border border-slate-300 rounded-md bg-white"
             >
               <option value="ALL">Tous les niveaux</option>
-              {db.niveaux.map((n) => (
-                <option key={n.id} value={n.niveau}>
-                  {n.niveau}
+              {niveauOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label} ({option.count})
                 </option>
               ))}
             </select>

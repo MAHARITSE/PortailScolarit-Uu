@@ -19,6 +19,7 @@ import {
 
 const STORAGE_KEY = 'portail_scolarite_uu_db_v1';
 const CERT_SETTINGS_KEY = 'portail_scolarite_uu_cert_settings_v1';
+const ACTIVE_ANNEE_KEY = 'portail_scolarite_uu_active_annee_v1';
 
 export const DEFAULT_CERTIFICATE_SETTINGS: CertificateSettings = {
   issueDate: '',
@@ -92,6 +93,51 @@ export function getDatabaseStorageSizeKB(db: ScolariteDatabase): number {
     return Math.round(bytes / 1024);
   } catch {
     return Math.round(JSON.stringify(db).length / 1024);
+  }
+}
+
+/** Année de début d'un libellé "2024-2025" (0 si non reconnue). */
+export function anneeStartYear(label: string | null | undefined): number {
+  const match = String(label ?? '').match(/(\d{4})/);
+  return match ? Number(match[1]) : 0;
+}
+
+/** Trie les années universitaires de la plus récente à la plus ancienne. */
+export function sortAnneesDesc<T extends { annee: string }>(annees: T[]): T[] {
+  return [...annees].sort(
+    (a, b) =>
+      anneeStartYear(b.annee) - anneeStartYear(a.annee) ||
+      b.annee.localeCompare(a.annee, 'fr')
+  );
+}
+
+/** Année universitaire la plus récente du référentiel ("dernière année"). */
+export function getLatestAnneeLabel(annees: { annee: string }[]): string {
+  return sortAnneesDesc(annees)[0]?.annee ?? '';
+}
+
+/**
+ * Année universitaire de travail : une seule année à la fois, par défaut la
+ * plus récente. Le choix de l'utilisateur est mémorisé localement.
+ */
+export function loadActiveAnnee(annees: { annee: string }[]): string {
+  const latest = getLatestAnneeLabel(annees);
+  try {
+    if (typeof localStorage === 'undefined') return latest;
+    const stored = localStorage.getItem(ACTIVE_ANNEE_KEY);
+    if (stored && annees.some((a) => a.annee === stored)) return stored;
+  } catch {
+    // ignore storage errors
+  }
+  return latest;
+}
+
+export function saveActiveAnnee(annee: string): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(ACTIVE_ANNEE_KEY, annee);
+  } catch {
+    // ignore preference persistence errors
   }
 }
 
@@ -185,6 +231,136 @@ export function normalizePhone(raw: unknown): string {
 
 export function normalizeCin(raw: string | undefined | null): string {
   return (raw ?? '').replace(/\s+/g, '').trim();
+}
+
+const NIVEAU_CYCLES = ['licence', 'master', 'doctorat'] as const;
+type NiveauCycle = (typeof NIVEAU_CYCLES)[number];
+
+const NIVEAU_CYCLE_RANK: Record<NiveauCycle, number> = {
+  licence: 0,
+  master: 1,
+  doctorat: 2,
+};
+
+/**
+ * Clé canonique d'un niveau : "L1", "licence1", "Licence 1" et "1ère année Licence"
+ * donnent tous "licence 1". Les libellés non reconnus sont simplement normalisés.
+ */
+export function normalizeNiveauKey(raw: string | null | undefined): string {
+  const cleaned = (raw ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[._\-/]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+
+  const compact = cleaned.replace(/\s+/g, '');
+  const cycleFor = (prefix: string): NiveauCycle | null => {
+    if (prefix.startsWith('lic') || prefix === 'l') return 'licence';
+    if (prefix.startsWith('mas') || prefix === 'm') return 'master';
+    if (prefix.startsWith('doc') || prefix === 'd') return 'doctorat';
+    return null;
+  };
+  const prefixPattern = '(licence|lic|master|mast|doctorat|doct|doctorant|m|l|d)';
+
+  // "l1", "m2", "d3", "licence1", "master2", ...
+  const shortMatch = compact.match(new RegExp(`^${prefixPattern}(\\d{1,2})$`));
+  if (shortMatch) {
+    const cycle = cycleFor(shortMatch[1]);
+    if (cycle) return `${cycle} ${Number(shortMatch[2])}`;
+  }
+
+  // "1ereanneelicence", "2eanneemaster", ...
+  const yearFirstMatch = compact.match(
+    new RegExp(`^(\\d{1,2})(?:ere|ieme|e|nd|re)?annee(licence|lic|master|mast|doctorat|doct|m|l|d)$`)
+  );
+  if (yearFirstMatch) {
+    const cycle = cycleFor(yearFirstMatch[2]);
+    if (cycle) return `${cycle} ${Number(yearFirstMatch[1])}`;
+  }
+
+  // "licence1ereannee", "master2emeannee", ...
+  const cycleFirstMatch = compact.match(
+    new RegExp(`^${prefixPattern}(\\d{1,2})(?:ere|ieme|e|nd|re)?annee$`)
+  );
+  if (cycleFirstMatch) {
+    const cycle = cycleFor(cycleFirstMatch[1]);
+    if (cycle) return `${cycle} ${Number(cycleFirstMatch[2])}`;
+  }
+
+  return cleaned;
+}
+
+/** Tri lisible des niveaux : Licence 1..3, Master 1..2, Doctorat 1..3, puis alphabétique. */
+export function compareNiveauKeys(a: string, b: string): number {
+  const parse = (key: string) => {
+    const match = key.match(/^(licence|master|doctorat)\s+(\d{1,2})$/);
+    if (!match) return null;
+    return {
+      rank: NIVEAU_CYCLE_RANK[match[1] as NiveauCycle],
+      year: Number(match[2]),
+    };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  if (pa && pb) return pa.rank - pb.rank || pa.year - pb.year;
+  if (pa) return -1;
+  if (pb) return 1;
+  return a.localeCompare(b, 'fr');
+}
+
+export interface NiveauFilterOption {
+  /** Clé canonique utilisée pour le filtrage (ex. "licence 1") */
+  key: string;
+  /** Libellé le plus explicite rencontré (ex. "Licence 1", jamais "L1") */
+  label: string;
+  /** Nombre d'inscriptions concernées */
+  count: number;
+}
+
+/**
+ * Construit la liste des niveaux réellement présents dans un jeu de données,
+ * en fusionnant les alias ("L1" + "Licence 1") et en triant les niveaux.
+ */
+export function buildNiveauFilterOptions(
+  labels: Iterable<string>
+): NiveauFilterOption[] {
+  const groups = new Map<
+    string,
+    { count: number; labels: Map<string, number> }
+  >();
+
+  for (const raw of labels) {
+    const key = normalizeNiveauKey(raw);
+    if (!key) continue;
+    const display = (raw ?? '').trim() || key;
+    const group = groups.get(key) ?? { count: 0, labels: new Map() };
+    group.count += 1;
+    group.labels.set(display, (group.labels.get(display) ?? 0) + 1);
+    groups.set(key, group);
+  }
+
+  return [...groups.entries()]
+    .map(([key, group]) => {
+      const canonical = key.match(/^(licence|master|doctorat) (\d{1,2})$/);
+      if (canonical) {
+        // Libellé officiel lisible, même si la base ne contient que l'alias "L1"
+        const cycle =
+          canonical[1].charAt(0).toUpperCase() + canonical[1].slice(1);
+        return { key, label: `${cycle} ${canonical[2]}`, count: group.count };
+      }
+      const [label] = [...group.labels.entries()].sort(
+        (a, b) => b[0].length - a[0].length || b[1] - a[1]
+      )[0];
+      return {
+        key,
+        label: label.charAt(0).toUpperCase() + label.slice(1),
+        count: group.count,
+      };
+    })
+    .sort((a, b) => compareNiveauKeys(a.key, b.key));
 }
 
 export function formatDateFR(isoOrRaw: string): string {
@@ -573,6 +749,118 @@ export function auditDatabase(
     orphanInscriptions,
     totalAnomalies,
   };
+}
+
+/** Construit le rapport d'audit au format CSV (séparateur « ; », BOM UTF-8). */
+export function buildAuditReportCsv(audit: DatabaseAuditReport): string {
+  const headers = [
+    'Catégorie',
+    'Détail',
+    'ID étudiant',
+    'NOM',
+    'PRÉNOMS',
+    'Date de naissance',
+    'Téléphone',
+    'CIN',
+  ];
+  const rows: string[][] = [];
+
+  const studentRow = (category: string, detail: string, e: Etudiant) => [
+    category,
+    detail,
+    String(e.id),
+    e.nom,
+    e.prenom,
+    formatDateFR(e.dateNaissance),
+    e.telephone,
+    e.numeroCin,
+  ];
+
+  for (const group of audit.duplicateStudents) {
+    for (const e of group.etudiants) {
+      rows.push(studentRow('Doublon étudiant', group.reason, e));
+    }
+  }
+  for (const { etudiant, reason } of audit.suspiciousBirthdates) {
+    rows.push(studentRow('Date de naissance', reason, etudiant));
+  }
+  for (const e of audit.nonStandardSex) {
+    rows.push(
+      studentRow(
+        'Code sexe non standard',
+        `« ${e.sexe} » → ${normalizeSex(e.sexe)}`,
+        e
+      )
+    );
+  }
+  for (const e of audit.missingCin) {
+    rows.push(studentRow('CIN manquant', '', e));
+  }
+  for (const e of audit.missingTelephone) {
+    rows.push(studentRow('Téléphone manquant', '', e));
+  }
+  for (const dup of audit.duplicateReferences) {
+    rows.push([
+      'Référence dupliquée',
+      `${dup.value} (${dup.annee}) — inscriptions ${dup.inscriptionIds.join(', ')}`,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ]);
+  }
+  for (const dup of audit.duplicateNumInscriptions) {
+    rows.push([
+      'N° inscription dupliqué',
+      `${dup.value} (${dup.annee}) — inscriptions ${dup.inscriptionIds.join(', ')}`,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ]);
+  }
+  for (const ins of audit.orphanInscriptions) {
+    rows.push([
+      'Inscription orpheline',
+      `#${ins.id} (étudiant #${ins.idEtudiant})`,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ]);
+  }
+
+  const escape = (value: string) => `"${(value ?? '').replace(/"/g, '""')}"`;
+  return (
+    '\uFEFF' +
+    [headers, ...rows].map((row) => row.map(escape).join(';')).join('\r\n')
+  );
+}
+
+export function exportAuditReportToCsv(
+  audit: DatabaseAuditReport,
+  anneeLabel?: string
+): void {
+  const blob = new Blob([buildAuditReportCsv(audit)], {
+    type: 'text/csv;charset=utf-8;',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yy = String(now.getFullYear()).slice(-2);
+  const suffix = (anneeLabel || 'Toutes').replace(/[^a-zA-Z0-9_-]/g, '_');
+  a.href = url;
+  a.download = `Audit qualite donnees ${suffix} du ${dd}-${mm}-${yy}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function normalizeAllSexCodes(db: ScolariteDatabase): {

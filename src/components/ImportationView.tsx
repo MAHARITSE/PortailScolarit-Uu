@@ -20,10 +20,16 @@ import { ImportDuplicateMode, ScolariteDatabase } from '../types/scolarite';
 
 interface ImportationViewProps {
   db: ScolariteDatabase;
+  /** Année universitaire de travail (une seule à la fois) */
+  anneeActive: string;
   onUpdateDb: (nextDb: ScolariteDatabase, toastMessage?: string) => void;
 }
 
-export function ImportationView({ db, onUpdateDb }: ImportationViewProps) {
+export function ImportationView({
+  db,
+  anneeActive,
+  onUpdateDb,
+}: ImportationViewProps) {
   const [fileBuffer, setFileBuffer] = useState<ArrayBuffer | null>(null);
   const [fileName, setFileName] = useState<string>('');
   const [sheetNames, setSheetNames] = useState<string[]>([]);
@@ -131,6 +137,17 @@ export function ImportationView({ db, onUpdateDb }: ImportationViewProps) {
             <Download className="w-4 h-4" />
             Télécharger le modèle Excel
           </button>
+        </div>
+
+        <div className="flex items-start gap-2 px-3.5 py-2.5 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-900">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <p>
+            Année de travail en cours :{' '}
+            <strong className="font-mono tabular-nums">{anneeActive || '—'}</strong>.
+            Les inscriptions importées conservent l&apos;année indiquée dans la
+            colonne <span className="font-mono">Annee</span> ; utilisez le
+            sélecteur d&apos;année de l&apos;en-tête pour consulter une autre année.
+          </p>
         </div>
 
         {/* Upload Zone */}

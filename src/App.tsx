@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
+  CalendarRange,
   Database,
   FileCheck2,
   FileSpreadsheet,
@@ -19,8 +20,12 @@ import { TablesSaisieView } from './components/TablesSaisieView';
 import { ToastContainer, ToastItem } from './components/Toast';
 import {
   auditDatabase,
+  getLatestAnneeLabel,
+  loadActiveAnnee,
   loadDatabase,
+  saveActiveAnnee,
   saveDatabase,
+  sortAnneesDesc,
 } from './services/database';
 import { NavigationView, ScolariteDatabase } from './types/scolarite';
 
@@ -39,6 +44,11 @@ const NAV_ITEMS: {
 
 export default function App() {
   const [db, setDb] = useState<ScolariteDatabase>(() => loadDatabase());
+  // L'application travaille sur une seule année universitaire à la fois.
+  // Par défaut : la plus récente du référentiel.
+  const [anneeActive, setAnneeActive] = useState<string>(() =>
+    loadActiveAnnee(db.annees)
+  );
   const [activeView, setActiveView] = useState<NavigationView>('accueil');
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [pendingQuickFilter, setPendingQuickFilter] =
@@ -82,6 +92,21 @@ export default function App() {
     setPendingQuickFilter(filter);
     setActiveView('accueil');
     setMobileMenuOpen(false);
+  }, []);
+
+  const anneeOptions = useMemo(() => sortAnneesDesc(db.annees), [db.annees]);
+
+  // Si l'année de travail a disparu du référentiel, on retombe sur la plus récente
+  useEffect(() => {
+    if (db.annees.length === 0) return;
+    if (!db.annees.some((a) => a.annee === anneeActive)) {
+      setAnneeActive(getLatestAnneeLabel(db.annees));
+    }
+  }, [db.annees, anneeActive]);
+
+  const handleAnneeChange = useCallback((annee: string) => {
+    setAnneeActive(annee);
+    saveActiveAnnee(annee);
   }, []);
 
   const anomalyCount = useMemo(() => auditDatabase(db).totalAnomalies, [db]);
@@ -214,6 +239,28 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md">
+              <CalendarRange className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <label
+                htmlFor="annee-active"
+                className="text-[11px] font-medium text-slate-500 hidden sm:inline whitespace-nowrap"
+              >
+                Année
+              </label>
+              <select
+                id="annee-active"
+                value={anneeActive}
+                onChange={(e) => handleAnneeChange(e.target.value)}
+                title="Année universitaire de travail"
+                className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer max-w-[110px] sm:max-w-none"
+              >
+                {anneeOptions.map((a) => (
+                  <option key={a.id} value={a.annee}>
+                    {a.annee}
+                  </option>
+                ))}
+              </select>
+            </div>
             {activeView !== 'dashboard' && anomalyCount > 0 && (
               <button
                 type="button"
@@ -241,6 +288,7 @@ export default function App() {
           {activeView === 'accueil' && (
             <AccueilView
               db={db}
+              anneeActive={anneeActive}
               onUpdateDb={handleUpdateDb}
               initialQuickFilter={pendingQuickFilter}
               onClearInitialFilter={() => setPendingQuickFilter('all')}
@@ -249,13 +297,20 @@ export default function App() {
           {activeView === 'dashboard' && (
             <DashboardView
               db={db}
+              anneeActive={anneeActive}
               onUpdateDb={handleUpdateDb}
               onJumpToStudents={handleJumpToStudents}
             />
           )}
-          {activeView === 'certificats' && <CertificatsView db={db} />}
+          {activeView === 'certificats' && (
+            <CertificatsView db={db} anneeActive={anneeActive} />
+          )}
           {activeView === 'importation' && (
-            <ImportationView db={db} onUpdateDb={handleUpdateDb} />
+            <ImportationView
+              db={db}
+              anneeActive={anneeActive}
+              onUpdateDb={handleUpdateDb}
+            />
           )}
           {activeView === 'tables' && (
             <TablesSaisieView db={db} onUpdateDb={handleUpdateDb} />

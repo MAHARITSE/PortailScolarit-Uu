@@ -20,6 +20,27 @@
   .font-mono, .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
+
+  /* Tailwind v4 n'applique plus cursor:pointer aux boutons :
+     on rétablit la main sur tous les éléments actionnables. */
+  button:not(:disabled),
+  [role='button']:not(:disabled),
+  [role='tab']:not([aria-disabled='true']),
+  summary,
+  select:not(:disabled),
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='file']:not(:disabled),
+  label:has(> input[type='checkbox']:not(:disabled)),
+  label:has(> input[type='radio']:not(:disabled)) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role='button'][aria-disabled='true'],
+  select:disabled {
+    cursor: not-allowed;
+  }
 }
 
 @media print {
