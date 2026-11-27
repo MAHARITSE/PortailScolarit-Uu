@@ -7,6 +7,7 @@ import {
   Printer,
   QrCode,
   Search,
+  LayoutTemplate,
   Settings2,
   ShieldAlert,
   ShieldCheck,
@@ -18,6 +19,7 @@ import {
   enrichInscriptions,
   formatDateFR,
   loadCertificateSettings,
+  loadDocumentTemplates,
   normalizeNiveauKey,
   saveCertificateSettings,
   verifyCertificateQuery,
@@ -33,12 +35,18 @@ interface CertificatsViewProps {
   db: ScolariteDatabase;
   /** Année universitaire de travail (une seule à la fois) */
   anneeActive: string;
+  /** Ouvre la page Administration · Modèles de documents */
+  onOpenTemplates?: () => void;
 }
 
 const PAGE_SIZE = 50;
 const CHUNK_SIZE = 150;
 
-export function CertificatsView({ db, anneeActive }: CertificatsViewProps) {
+export function CertificatsView({
+  db,
+  anneeActive,
+  onOpenTemplates,
+}: CertificatsViewProps) {
   const [search, setSearch] = useState('');
   const annee = anneeActive;
   const [mention, setMention] = useState('ALL');
@@ -55,6 +63,8 @@ export function CertificatsView({ db, anneeActive }: CertificatsViewProps) {
   const [settings, setSettings] = useState<CertificateSettings>(() =>
     loadCertificateSettings()
   );
+  // Modèle de document défini dans la page Administration
+  const docTemplates = useMemo(() => loadDocumentTemplates(), []);
   const [showSettings, setShowSettings] = useState(false);
 
   // Verifier modal
@@ -228,6 +238,17 @@ export function CertificatsView({ db, anneeActive }: CertificatsViewProps) {
                 Vérifier un certificat
               </button>
 
+              {onOpenTemplates && (
+                <button
+                  type="button"
+                  onClick={onOpenTemplates}
+                  className="px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 inline-flex items-center gap-1.5"
+                >
+                  <LayoutTemplate className="w-4 h-4 text-blue-600" />
+                  Modèles de documents
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => setShowSettings((s) => !s)}
@@ -267,6 +288,10 @@ export function CertificatsView({ db, anneeActive }: CertificatsViewProps) {
           {/* Certificate Settings Panel */}
           {showSettings && (
             <div className="p-4 bg-slate-50 border border-slate-200 rounded-md grid grid-cols-1 md:grid-cols-4 gap-3">
+              <p className="md:col-span-4 text-[11px] text-slate-500 -mb-1">
+                Mise en page (en-tête, blocs, tableau, QR code, signature) :
+                page <span className="font-medium text-slate-700">Administration · Modèles</span>.
+              </p>
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
                   Date d&apos;édition affichée (vide = aujourd&apos;hui)
@@ -583,7 +608,11 @@ export function CertificatsView({ db, anneeActive }: CertificatsViewProps) {
                 </button>
               </div>
             </div>
-            <CertificateDocument record={previewItem} settings={settings} />
+            <CertificateDocument
+              record={previewItem}
+              settings={settings}
+              template={docTemplates.certificat}
+            />
           </div>
         </div>
       )}
@@ -681,7 +710,11 @@ export function CertificatsView({ db, anneeActive }: CertificatsViewProps) {
         <div className="hidden print:block space-y-0">
           {printTargets.map((item) => (
             <div key={item.idInscription} className="print-page-break">
-              <CertificateDocument record={item} settings={settings} />
+              <CertificateDocument
+                record={item}
+                settings={settings}
+                template={docTemplates.certificat}
+              />
             </div>
           ))}
         </div>

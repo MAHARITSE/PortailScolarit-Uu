@@ -48,6 +48,8 @@ export interface Etudiant {
   nationalite: string;
   nomPere: string;
   nomMere: string;
+  /** Photo d'identité (data URL) utilisée sur la carte étudiant */
+  photo?: string;
 }
 
 export interface Inscription {
@@ -106,12 +108,14 @@ export interface EnrichedInscription {
   niveau: string;
   parcours: string;
   annee: string;
+  photo: string;
 }
 
 export type NavigationView =
   | 'accueil'
   | 'dashboard'
   | 'certificats'
+  | 'administration'
   | 'importation'
   | 'tables'
   | 'sauvegarde';
@@ -196,3 +200,91 @@ export interface DashboardStats {
   byAnnee: BreakdownItem[];
   topLieuxDelivrance: { label: string; count: number }[];
 }
+
+/* ------------------------------------------------------------------ */
+/* Modèles de documents (certificat de scolarité & carte étudiant)     */
+/* ------------------------------------------------------------------ */
+
+export type DocumentKind = 'certificat' | 'carte';
+
+export type DocumentBorderStyle = 'none' | 'thin' | 'double';
+export type DocumentFontFamily = 'sans' | 'display' | 'mono';
+
+export interface DocumentTemplateRow {
+  id: string;
+  label: string;
+  enabled: boolean;
+}
+
+export interface DocumentTemplate {
+  version: number;
+  kind: DocumentKind;
+  updatedAt: string;
+  header: {
+    showLogo: boolean;
+    logoUrl: string;
+    showSecondaryLogo: boolean;
+    secondaryLogoUrl: string;
+    line1: string;
+    line2: string;
+    line3: string;
+    line4: string;
+    line5: string;
+  };
+  texts: {
+    title: string;
+    intro: string;
+    closing: string;
+    legalMention: string;
+  };
+  signature: {
+    title: string;
+    name: string;
+    place: string;
+    showDate: boolean;
+  };
+  blocks: {
+    header: boolean;
+    reference: boolean;
+    title: boolean;
+    identity: boolean;
+    filiation: boolean;
+    academicTable: boolean;
+    qr: boolean;
+    signature: boolean;
+    watermark: boolean;
+    legalMention: boolean;
+  };
+  rows: DocumentTemplateRow[];
+  qr: {
+    size: number;
+    includeName: boolean;
+    includeInstitution: boolean;
+    includeMention: boolean;
+    includeLevel: boolean;
+    includeYear: boolean;
+    includeReference: boolean;
+    header: string;
+  };
+  appearance: {
+    accentColor: string;
+    textColor: string;
+    borderStyle: DocumentBorderStyle;
+    watermarkText: string;
+    watermarkOpacity: number;
+    fontFamily: DocumentFontFamily;
+    fontSize: number;
+  };
+  card: {
+    showPhoto: boolean;
+    photoHint: string;
+    headerColor: string;
+    showValidity: boolean;
+    validityYears: number;
+    backTitle: string;
+    backNote: string;
+    rounded: boolean;
+  };
+}
+
+export type DocumentTemplates = Record<DocumentKind, DocumentTemplate>;

@@ -6,12 +6,14 @@ import {
   FileCheck2,
   FileSpreadsheet,
   Home,
+  LayoutTemplate,
   Menu,
   Printer,
   Table2,
   X,
 } from 'lucide-react';
 import { AccueilView, QuickFilterMode } from './components/AccueilView';
+import { AdministrationView } from './components/AdministrationView';
 import { CertificatsView } from './components/CertificatsView';
 import { DashboardView } from './components/DashboardView';
 import { ImportationView } from './components/ImportationView';
@@ -37,6 +39,7 @@ const NAV_ITEMS: {
   { key: 'accueil', label: 'Accueil & Inscriptions', icon: Home },
   { key: 'dashboard', label: 'Tableau de Bord & Audit', icon: BarChart3 },
   { key: 'certificats', label: 'Certificats de Scolarité', icon: FileCheck2 },
+  { key: 'administration', label: 'Administration · Modèles', icon: LayoutTemplate },
   { key: 'importation', label: 'Importation Excel', icon: FileSpreadsheet },
   { key: 'tables', label: 'Tables de Saisie', icon: Table2 },
   { key: 'sauvegarde', label: 'Sauvegarde & Purge', icon: Database },
@@ -270,7 +273,7 @@ export default function App() {
                 <span>{anomalyCount} anomalies qualité</span>
               </button>
             )}
-            {activeView !== 'certificats' && (
+            {activeView !== 'certificats' && activeView !== 'administration' && (
               <button
                 type="button"
                 onClick={() => setActiveView('certificats')}
@@ -303,7 +306,14 @@ export default function App() {
             />
           )}
           {activeView === 'certificats' && (
-            <CertificatsView db={db} anneeActive={anneeActive} />
+            <CertificatsView
+              db={db}
+              anneeActive={anneeActive}
+              onOpenTemplates={() => setActiveView('administration')}
+            />
+          )}
+          {activeView === 'administration' && (
+            <AdministrationView db={db} anneeActive={anneeActive} />
           )}
           {activeView === 'importation' && (
             <ImportationView

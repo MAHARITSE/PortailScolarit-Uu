@@ -5,6 +5,9 @@ import {
   BreakdownItem,
   CertificateSettings,
   DashboardStats,
+  DocumentKind,
+  DocumentTemplate,
+  DocumentTemplates,
   DatabaseAuditReport,
   DuplicateCodeEntry,
   DuplicateStudentGroup,
@@ -20,6 +23,7 @@ import {
 const STORAGE_KEY = 'portail_scolarite_uu_db_v1';
 const CERT_SETTINGS_KEY = 'portail_scolarite_uu_cert_settings_v1';
 const ACTIVE_ANNEE_KEY = 'portail_scolarite_uu_active_annee_v1';
+const DOC_TEMPLATES_KEY = 'portail_scolarite_uu_doc_templates_v1';
 
 export const DEFAULT_CERTIFICATE_SETTINGS: CertificateSettings = {
   issueDate: '',
@@ -504,6 +508,7 @@ export function enrichInscriptions(db: ScolariteDatabase): EnrichedInscription[]
       niveau: niveau.niveau,
       parcours: parcours ? parcours.parcours : '— Aucun —',
       annee: annee.annee,
+      photo: etu.photo ?? '',
     });
   }
 
@@ -861,6 +866,293 @@ export function exportAuditReportToCsv(
   a.download = `Audit qualite donnees ${suffix} du ${dd}-${mm}-${yy}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/* ------------------------------------------------------------------ */
+/* Modèles de documents (administration)                              */
+/* ------------------------------------------------------------------ */
+
+const DOC_TEMPLATE_ROWS: { id: string; label: string }[] = [
+  { id: 'institution', label: 'Institution' },
+  { id: 'domaine', label: 'Domaine' },
+  { id: 'mention', label: 'Mention' },
+  { id: 'parcours', label: 'Parcours' },
+  { id: 'grade', label: 'Grade' },
+  { id: 'niveau', label: 'Niveau' },
+  { id: 'annee', label: 'Année universitaire' },
+  { id: 'numInscription', label: 'N° inscription' },
+  { id: 'reference', label: 'Référence' },
+];
+
+function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
+  return {
+    version: 1,
+    kind,
+    updatedAt: '',
+    header: {
+      showLogo: true,
+      logoUrl: '/assets/logo-uu.jpg',
+      showSecondaryLogo: true,
+      secondaryLogoUrl: '/assets/phoenix-logo.png',
+      line1: "Repoblikan'i Madagasikara",
+      line2: 'Fitiavana - Tanindrazana - Fandrosoana',
+      line3:
+        "Ministère de l'Enseignement Supérieur et de la Recherche Scientifique",
+      line4: 'Université de Toliara',
+      line5: "Direction des Systèmes d'Information et du Numérique · Scolarité Centrale",
+    },
+    texts: {
+      title: 'Certificat de Scolarité',
+      intro:
+        "Le Responsable de la Scolarité Centrale de l'Université de Toliara certifie par la présente que :",
+      closing:
+        "En foi de quoi, le présent certificat est délivré à l'intéressé(e) pour servir et valoir ce que de droit.",
+      legalMention:
+        "Document officiel de l'Université de Toliara — toute falsification est passible de poursuites.",
+    },
+    signature: {
+      title: 'Le Responsable de la Scolarité Centrale',
+      name: '',
+      place: 'Toliara',
+      showDate: true,
+    },
+    blocks: {
+      header: true,
+      reference: true,
+      title: true,
+      identity: true,
+      filiation: true,
+      academicTable: true,
+      qr: true,
+      signature: true,
+      watermark: false,
+      legalMention: true,
+    },
+    rows: DOC_TEMPLATE_ROWS.map((row) => ({ ...row, enabled: true })),
+    qr: {
+      size: 96,
+      includeName: true,
+      includeInstitution: true,
+      includeMention: true,
+      includeLevel: true,
+      includeYear: true,
+      includeReference: true,
+      header: '===== SCOLARITE LOG =====',
+    },
+    appearance: {
+      accentColor: '#0f172a',
+      textColor: '#0f172a',
+      borderStyle: 'thin',
+      watermarkText: 'UNIVERSITÉ DE TOLIARA',
+      watermarkOpacity: 0.08,
+      fontFamily: 'display',
+      fontSize: 14,
+    },
+    card: {
+      showPhoto: true,
+      photoHint: 'Photo non fournie',
+      headerColor: '#1d4ed8',
+      showValidity: true,
+      validityYears: 1,
+      backTitle: 'Carte d’étudiant',
+      backNote:
+        "Cette carte est strictement personnelle. Elle doit être présentée à toute demande des autorités universitaires.",
+      rounded: true,
+    },
+  };
+}
+
+export const DEFAULT_DOCUMENT_TEMPLATES: DocumentTemplates = {
+  certificat: baseDocumentTemplate('certificat'),
+  carte: {
+    ...baseDocumentTemplate('carte'),
+    texts: {
+      title: 'Carte d’Étudiant',
+      intro: '',
+      closing: '',
+      legalMention:
+        "Carte officielle de l'Université de Toliara — non transférable.",
+    },
+    signature: {
+      title: 'Le Responsable de la Scolarité Centrale',
+      name: '',
+      place: 'Toliara',
+      showDate: false,
+    },
+    blocks: {
+      ...baseDocumentTemplate('carte').blocks,
+      reference: false,
+      filiation: false,
+      academicTable: false,
+      legalMention: true,
+    },
+    qr: {
+      ...baseDocumentTemplate('carte').qr,
+      size: 64,
+      header: '===== CARTE ETUDIANT =====',
+    },
+    appearance: {
+      ...baseDocumentTemplate('carte').appearance,
+      accentColor: '#1d4ed8',
+      fontFamily: 'sans',
+      fontSize: 12,
+    },
+  },
+};
+
+/**
+ * Fusionne un modèle enregistré avec les valeurs par défaut (tolère les
+ * évolutions de schéma sans perdre les personnalisations).
+ */
+export function mergeDocumentTemplate(
+  kind: DocumentKind,
+  stored: Partial<DocumentTemplate> | null | undefined
+): DocumentTemplate {
+  const base = structuredClone(DEFAULT_DOCUMENT_TEMPLATES[kind]);
+  if (!stored) return base;
+  const mergeObject = (
+    target: Record<string, unknown>,
+    patch: unknown
+  ): Record<string, unknown> => {
+    if (!patch || typeof patch !== 'object') return target;
+    const next: Record<string, unknown> = { ...target };
+    for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
+      const current = target[key];
+      if (value === null || value === undefined) continue;
+      if (
+        current &&
+        typeof current === 'object' &&
+        !Array.isArray(current) &&
+        typeof value === 'object' &&
+        !Array.isArray(value)
+      ) {
+        next[key] = mergeObject(current as Record<string, unknown>, value);
+      } else {
+        next[key] = value;
+      }
+    }
+    return next;
+  };
+  return mergeObject(
+    base as unknown as Record<string, unknown>,
+    stored
+  ) as unknown as DocumentTemplate;
+}
+
+export function loadDocumentTemplates(): DocumentTemplates {
+  try {
+    if (typeof localStorage === 'undefined') return structuredClone(DEFAULT_DOCUMENT_TEMPLATES);
+    const raw = localStorage.getItem(DOC_TEMPLATES_KEY);
+    if (!raw) return structuredClone(DEFAULT_DOCUMENT_TEMPLATES);
+    const parsed = JSON.parse(raw) as Partial<DocumentTemplates>;
+    return {
+      certificat: mergeDocumentTemplate('certificat', parsed.certificat),
+      carte: mergeDocumentTemplate('carte', parsed.carte),
+    };
+  } catch {
+    return structuredClone(DEFAULT_DOCUMENT_TEMPLATES);
+  }
+}
+
+export function saveDocumentTemplates(templates: DocumentTemplates): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(DOC_TEMPLATES_KEY, JSON.stringify(templates));
+  } catch {
+    // ignore preference persistence errors
+  }
+}
+
+export function resetDocumentTemplate(kind: DocumentKind): DocumentTemplate {
+  return structuredClone(DEFAULT_DOCUMENT_TEMPLATES[kind]);
+}
+
+/** Texte encodé dans le QR Code du document, selon les champs activés. */
+export function buildDocumentQrPayload(
+  record: EnrichedInscription,
+  template: DocumentTemplate
+): string {
+  const refCode =
+    record.reference || record.numInscription || String(record.idInscription);
+  const lines = [template.qr.header];
+  if (template.qr.includeName) lines.push(`NOM        : ${record.nom} ${record.prenom}`);
+  if (template.qr.includeInstitution) lines.push(`Institution : ${record.faculte}`);
+  if (template.qr.includeMention) lines.push(`Mention     : ${record.mention}`);
+  if (template.qr.includeLevel) lines.push(`Niveau      : ${record.niveau}`);
+  if (template.qr.includeYear) lines.push(`Année       : ${record.annee}`);
+  if (template.qr.includeReference) lines.push(`Référence   : ${refCode}`);
+  lines.push('=========================');
+  return lines.join('\n');
+}
+
+/** Valeur affichée pour une ligne du tableau académique. */
+export function getDocumentRowValue(
+  record: EnrichedInscription,
+  rowId: string
+): string {
+  switch (rowId) {
+    case 'institution':
+      return record.faculte;
+    case 'domaine':
+      return record.domaine;
+    case 'mention':
+      return record.mention;
+    case 'parcours':
+      return record.parcours;
+    case 'grade':
+      return record.grade;
+    case 'niveau':
+      return record.niveau;
+    case 'annee':
+      return record.annee;
+    case 'numInscription':
+      return record.numInscription || '—';
+    case 'reference':
+      return record.reference || '—';
+    default:
+      return '';
+  }
+}
+
+/** Étudiant fictif utilisé pour l'aperçu des modèles dans l'administration. */
+export function getSampleInscription(db: ScolariteDatabase): EnrichedInscription {
+  const rows = enrichInscriptions(db);
+  const sample = rows[0];
+  if (sample) return { ...sample, photo: sample.photo || '' };
+  return {
+    idInscription: 0,
+    idEtudiant: 0,
+    idAnnee: 0,
+    idFaculte: 0,
+    idDomaine: 0,
+    idMention: 0,
+    idNiveau: 0,
+    idParcours: null,
+    reference: '000000',
+    numInscription: '000000',
+    nom: 'RAKOTO',
+    prenom: 'Naivo',
+    dateNaissance: '2003-04-12',
+    lieuNaissance: 'TOLIARA',
+    sexe: 'M',
+    sexeNormalized: 'M',
+    telephone: '034 12 345 67',
+    numeroCin: '501011012345',
+    dateCin: '2021-06-01',
+    lieuDelivrance: 'TOLIARA',
+    nationalite: 'MALAGASY',
+    nomPere: 'RAKOTO Jean',
+    nomMere: 'RASOA Marie',
+    faculte: 'Faculté des Lettres et Sciences Humaines',
+    faculteLogo: '/assets/logo-uu.jpg',
+    domaine: 'Sciences de la Société',
+    mention: 'SOCIOLOGIE',
+    grade: 'Licence',
+    niveau: 'L1',
+    parcours: '— Aucun —',
+    annee: '2024-2025',
+    photo: '',
+  };
 }
 
 export function normalizeAllSexCodes(db: ScolariteDatabase): {

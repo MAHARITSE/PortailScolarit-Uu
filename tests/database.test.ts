@@ -4,9 +4,11 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import * as XLSX from 'xlsx';
 import {
+  DEFAULT_DOCUMENT_TEMPLATES,
   auditDatabase,
   batchReinscribe,
   buildAuditReportCsv,
+  buildDocumentQrPayload,
   buildNiveauFilterOptions,
   calculateAge,
   compareNiveauKeys,
@@ -16,10 +18,13 @@ import {
   formatDateFR,
   getBirthdateAnomalyReason,
   getDependencyInfo,
+  getDocumentRowValue,
   getLatestAnneeLabel,
+  getSampleInscription,
   getSeedDatabase,
   getWorkbookSheetNames,
   importDatabaseJson,
+  mergeDocumentTemplate,
   mergeDuplicateStudents,
   loadActiveAnnee,
   normalizeAllSexCodes,
@@ -67,6 +72,104 @@ describe('Normalisation & Formatage', () => {
     assert.ok(getBirthdateAnomalyReason('2024-01-01', ref)?.includes('jeune'));
     assert.ok(getBirthdateAnomalyReason('2005-02-30', ref)?.includes('invalide'));
     assert.equal(calculateAge('2000-01-01', ref), 26);
+  });
+});
+
+describe('Modèles de documents (administration)', () => {
+  it('fournit un modèle par défaut pour le certificat et la carte', () => {
+    const certificat = DEFAULT_DOCUMENT_TEMPLATES.certificat;
+    const carte = DEFAULT_DOCUMENT_TEMPLATES.carte;
+    assert.equal(certificat.kind, 'certificat');
+    assert.equal(carte.kind, 'carte');
+    assert.equal(certificat.texts.title, 'Certificat de Scolarité');
+    assert.equal(carte.texts.title, 'Carte d’Étudiant');
+    assert.ok(certificat.blocks.academicTable);
+    assert.equal(carte.blocks.academicTable, false);
+    assert.ok(certificat.rows.length >= 6);
+    assert.ok(certificat.qr.includeName);
+  });
+
+  it('fusionne un modèle enregistré avec les valeurs par défaut sans perdre la personnalisation', () => {
+    const merged = mergeDocumentTemplate('certificat', {
+      texts: { title: 'ATTESTATION DE SCOLARITÉ' },
+      appearance: { accentColor: '#7c3aed' },
+      blocks: { watermark: true },
+    } as never);
+
+    assert.equal(merged.texts.title, 'ATTESTATION DE SCOLARITÉ');
+    assert.equal(merged.appearance.accentColor, '#7c3aed');
+    assert.equal(merged.blocks.watermark, true);
+    // Les clés non fournies gardent la valeur par défaut
+    assert.equal(
+      merged.texts.closing,
+      DEFAULT_DOCUMENT_TEMPLATES.certificat.texts.closing
+    );
+    assert.equal(merged.blocks.header, true);
+    assert.equal(merged.rows.length, DEFAULT_DOCUMENT_TEMPLATES.certificat.rows.length);
+  });
+
+  it('construit le contenu du QR code selon les champs activés', () => {
+    const db = getSeedDatabase();
+    const record = getSampleInscription(db);
+    const tpl = mergeDocumentTemplate('certificat', null);
+
+    const full = buildDocumentQrPayload(record, tpl);
+    assert.ok(full.includes(record.nom));
+    assert.ok(full.includes(record.mention));
+    assert.ok(full.includes(record.annee));
+
+    const light = mergeDocumentTemplate('certificat', {
+      qr: {
+        header: '=== TEST ===',
+        includeName: true,
+        includeInstitution: false,
+        includeMention: false,
+        includeLevel: false,
+        includeYear: false,
+        includeReference: true,
+      },
+    } as never);
+    const minimal = buildDocumentQrPayload(record, light);
+    assert.ok(minimal.startsWith('=== TEST ==='));
+    assert.ok(minimal.includes(record.nom));
+    assert.ok(!minimal.includes(record.mention));
+    assert.ok(!minimal.includes(record.annee));
+    assert.ok(minimal.includes(record.reference));
+  });
+
+  it('associe chaque ligne de modèle à la bonne donnée et récupère la photo de l’étudiant', () => {
+    const db = getSeedDatabase();
+    db.etudiants[0].photo = 'data:image/jpeg;base64,AAAA';
+    const record = enrichInscriptions(db).find(
+      (row) => row.idEtudiant === db.etudiants[0].id
+    );
+    assert.ok(record);
+    if (!record) return;
+    assert.equal(getDocumentRowValue(record, 'mention'), record.mention);
+    assert.equal(getDocumentRowValue(record, 'niveau'), record.niveau);
+    assert.equal(getDocumentRowValue(record, 'annee'), record.annee);
+    assert.equal(
+      getDocumentRowValue(record, 'inconnu'),
+      ''
+    );
+    assert.equal(record.photo, 'data:image/jpeg;base64,AAAA');
+  });
+
+  it('fournit un étudiant d’aperçu même avec une base vide', () => {
+    const empty = {
+      annees: [],
+      facultes: [],
+      domaines: [],
+      mentions: [],
+      niveaux: [],
+      parcours: [],
+      etudiants: [],
+      inscriptions: [],
+    };
+    const sample = getSampleInscription(empty);
+    assert.equal(sample.nom, 'RAKOTO');
+    assert.ok(sample.numInscription.length > 0);
+    assert.equal(sample.photo, '');
   });
 });
 
