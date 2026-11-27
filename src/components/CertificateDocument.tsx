@@ -30,6 +30,12 @@ interface CertificateDocumentProps {
   qrBoost?: number;
   /** Jeton forcé (certificat en cours d'émission) */
   token?: string;
+  /** Masque l'en-tête institutionnel (éditeur pleine page) */
+  hideHeader?: boolean;
+  /** Masque le pied de page (éditeur pleine page) */
+  hideFooter?: boolean;
+  /** Rendu « dans la page » : pas de marge interne ni d'ombre */
+  embedded?: boolean;
 }
 
 const FONT_CLASS: Record<DocumentTemplate['appearance']['fontFamily'], string> = {
@@ -46,6 +52,9 @@ export function CertificateDocument({
   scale = 1,
   qrBoost = 1,
   token,
+  hideHeader = false,
+  hideFooter = false,
+  embedded = false,
 }: CertificateDocumentProps) {
   const tpl = template ?? DEFAULT_DOCUMENT_TEMPLATES.certificat;
   const { blocks, appearance, texts, qr } = tpl;
@@ -150,7 +159,11 @@ export function CertificateDocument({
 
   return (
     <article
-      className={`bg-white text-slate-900 ${borderClass} rounded-sm shadow-sm p-8 sm:p-10 max-w-[794px] mx-auto print:border-0 print:shadow-none print:p-4 print:break-inside-avoid relative overflow-hidden ${FONT_CLASS[appearance.fontFamily]}`}
+      className={`bg-white text-slate-900 ${borderClass} ${
+        embedded
+          ? 'p-0 shadow-none max-w-none'
+          : 'rounded-sm shadow-sm p-8 sm:p-10 max-w-[794px] mx-auto print:p-4 print:shadow-none'
+      } print:border-0 print:break-inside-avoid relative overflow-hidden ${FONT_CLASS[appearance.fontFamily]}`}
       style={{
         borderColor: appearance.accentColor,
         color: appearance.textColor,
@@ -172,7 +185,7 @@ export function CertificateDocument({
       )}
 
       {/* En-tête institutionnel */}
-      {blocks.header && (
+      {blocks.header && !hideHeader && (
         <div
           className="flex items-start justify-between gap-4 pb-5 relative"
           style={{ borderBottom: `2px solid ${appearance.accentColor}` }}
@@ -389,7 +402,7 @@ export function CertificateDocument({
         </div>
       </div>
 
-      {tpl.footer.showFooter && (tpl.footer.address || tpl.footer.contacts || tpl.footer.note) && (
+      {!hideFooter && tpl.footer.showFooter && (tpl.footer.address || tpl.footer.contacts || tpl.footer.note) && (
         <div className="mt-4 pt-2 border-t border-slate-200 text-[0.65em] text-slate-500 flex flex-wrap items-center justify-between gap-2">
           <span>
             {tpl.footer.address}

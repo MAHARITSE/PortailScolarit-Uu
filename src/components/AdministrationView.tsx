@@ -6,6 +6,7 @@ import {
   Eye,
   FileBadge,
   LayoutTemplate,
+  Maximize2,
   Printer,
   RotateCcw,
   Save,
@@ -30,6 +31,7 @@ import {
   ScolariteDatabase,
 } from '../types/scolarite';
 import { CertificateDocument } from './CertificateDocument';
+import { CertificatePageModal } from './CertificatePageModal';
 import { CertificatePrintSheets } from './CertificatePrintSheets';
 import { CertificateTemplateEditor } from './CertificateTemplateEditor';
 import { BodyTypographyControls } from './BodyTypographyControls';
@@ -223,6 +225,8 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
   const [savedAt, setSavedAt] = useState<string>('');
   const [showBack, setShowBack] = useState(true);
   const [showPrintSheets, setShowPrintSheets] = useState(false);
+  /** Feuille A4 en vue page (comme Word) : en-tête, texte et pied de page éditables */
+  const [pageModalOpen, setPageModalOpen] = useState(false);
   const [importMessage, setImportMessage] = useState<string>('');
   const [printTargets, setPrintTargets] = useState<DocumentKind | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -866,6 +870,15 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {kind === 'certificat' && (
+                    <button
+                      type="button"
+                      onClick={() => setPageModalOpen(true)}
+                      className="px-2.5 py-1.5 text-[11px] font-semibold text-white bg-slate-800 rounded hover:bg-slate-900 inline-flex items-center gap-1"
+                    >
+                      <Maximize2 className="w-3 h-3" /> Ouvrir la feuille
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setShowPrintSheets((v) => !v)}
@@ -989,6 +1002,15 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
             template={templates.certificat}
           />
         </div>
+      )}
+      {pageModalOpen && kind === 'certificat' && (
+        <CertificatePageModal
+          template={templates.certificat}
+          record={sample}
+          patchSection={(key, value) => patchSection(key, value)}
+          onPrint={() => triggerPrint('certificat')}
+          onClose={() => setPageModalOpen(false)}
+        />
       )}
       {printTargets === 'carte' && (
         <div className="hidden print:block">

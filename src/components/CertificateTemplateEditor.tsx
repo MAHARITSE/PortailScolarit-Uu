@@ -353,8 +353,8 @@ export function CertificateTemplateEditor({
 
       {/* 3 · En-tête & pied de page ----------------------------------------- */}
       <EditorSection
-        title="En-tête & pied de page"
-        description="Établissement, devise, logo, adresse et coordonnées"
+        title="Logos institutionnels"
+        description="Logo principal et logo secondaire — les textes d’en-tête et de pied de page s’éditent sur la feuille (bouton « Ouvrir la feuille »)"
         icon={<ImageIcon className="w-4 h-4" />}
       >
         <div className="grid grid-cols-2 gap-x-3">
@@ -405,80 +405,6 @@ export function CertificateTemplateEditor({
             className={`${inputClass} font-mono`}
           />
         </Field>
-        <div className="grid grid-cols-1 gap-2">
-          <Field label="Ligne 1 · République">
-            <input
-              type="text"
-              value={template.header.line1}
-              onChange={(e) => patchSection('header', { line1: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Ligne 2 · Devise">
-            <input
-              type="text"
-              value={template.header.line2}
-              onChange={(e) => patchSection('header', { line2: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Ligne 3 · Ministère">
-            <input
-              type="text"
-              value={template.header.line3}
-              onChange={(e) => patchSection('header', { line3: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Ligne 4 · Université">
-            <input
-              type="text"
-              value={template.header.line4}
-              onChange={(e) => patchSection('header', { line4: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Ligne 5 · Direction / service">
-            <input
-              type="text"
-              value={template.header.line5}
-              onChange={(e) => patchSection('header', { line5: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-        </div>
-
-        <div className="pt-2 border-t border-slate-100 space-y-2">
-          <Switch
-            label="Afficher le pied de page"
-            checked={template.footer.showFooter}
-            onChange={(v) => patchSection('footer', { showFooter: v })}
-          />
-          <Field label="Adresse">
-            <input
-              type="text"
-              value={template.footer.address}
-              onChange={(e) => patchSection('footer', { address: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Coordonnées (téléphone · e-mail · site)">
-            <input
-              type="text"
-              value={template.footer.contacts}
-              onChange={(e) => patchSection('footer', { contacts: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Note de bas de page">
-            <input
-              type="text"
-              value={template.footer.note}
-              onChange={(e) => patchSection('footer', { note: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-        </div>
       </EditorSection>
 
       {/* 4 · Signature -------------------------------------------------------- */}
