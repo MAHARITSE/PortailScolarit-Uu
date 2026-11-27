@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import {
   auditDatabase,
   batchReinscribe,
+  buildAuditReportCsv,
   buildNiveauFilterOptions,
   calculateAge,
   compareNiveauKeys,
@@ -66,6 +67,39 @@ describe('Normalisation & Formatage', () => {
     assert.ok(getBirthdateAnomalyReason('2024-01-01', ref)?.includes('jeune'));
     assert.ok(getBirthdateAnomalyReason('2005-02-30', ref)?.includes('invalide'));
     assert.equal(calculateAge('2000-01-01', ref), 26);
+  });
+});
+
+describe('Rapport d’audit exportable', () => {
+  it('produit un CSV complet (BOM UTF-8, séparateur « ; », une ligne par anomalie)', () => {
+    const db = getSeedDatabase();
+    const audit = auditDatabase(db, new Date('2026-11-27T00:00:00Z'));
+    const csv = buildAuditReportCsv(audit);
+
+    assert.ok(csv.startsWith('\uFEFF'));
+    const lines = csv.split('\r\n');
+    // Le BOM précède la première cellule
+    assert.ok(
+      lines[0].includes('"Catégorie";"Détail";"ID étudiant";"NOM";"PRÉNOMS"')
+    );
+
+    const expectedRows =
+      1 +
+      audit.duplicateStudents.reduce((n, g) => n + g.etudiants.length, 0) +
+      audit.suspiciousBirthdates.length +
+      audit.nonStandardSex.length +
+      audit.missingCin.length +
+      audit.missingTelephone.length +
+      audit.duplicateReferences.length +
+      audit.duplicateNumInscriptions.length +
+      audit.orphanInscriptions.length;
+    assert.equal(lines.length, expectedRows);
+
+    assert.ok(csv.includes('"Doublon étudiant"'));
+    assert.ok(csv.includes('"Date de naissance"'));
+    assert.ok(csv.includes('"Code sexe non standard"'));
+    assert.ok(csv.includes('"CIN manquant"'));
+    assert.ok(csv.includes('"Téléphone manquant"'));
   });
 });
 

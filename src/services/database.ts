@@ -751,6 +751,118 @@ export function auditDatabase(
   };
 }
 
+/** Construit le rapport d'audit au format CSV (séparateur « ; », BOM UTF-8). */
+export function buildAuditReportCsv(audit: DatabaseAuditReport): string {
+  const headers = [
+    'Catégorie',
+    'Détail',
+    'ID étudiant',
+    'NOM',
+    'PRÉNOMS',
+    'Date de naissance',
+    'Téléphone',
+    'CIN',
+  ];
+  const rows: string[][] = [];
+
+  const studentRow = (category: string, detail: string, e: Etudiant) => [
+    category,
+    detail,
+    String(e.id),
+    e.nom,
+    e.prenom,
+    formatDateFR(e.dateNaissance),
+    e.telephone,
+    e.numeroCin,
+  ];
+
+  for (const group of audit.duplicateStudents) {
+    for (const e of group.etudiants) {
+      rows.push(studentRow('Doublon étudiant', group.reason, e));
+    }
+  }
+  for (const { etudiant, reason } of audit.suspiciousBirthdates) {
+    rows.push(studentRow('Date de naissance', reason, etudiant));
+  }
+  for (const e of audit.nonStandardSex) {
+    rows.push(
+      studentRow(
+        'Code sexe non standard',
+        `« ${e.sexe} » → ${normalizeSex(e.sexe)}`,
+        e
+      )
+    );
+  }
+  for (const e of audit.missingCin) {
+    rows.push(studentRow('CIN manquant', '', e));
+  }
+  for (const e of audit.missingTelephone) {
+    rows.push(studentRow('Téléphone manquant', '', e));
+  }
+  for (const dup of audit.duplicateReferences) {
+    rows.push([
+      'Référence dupliquée',
+      `${dup.value} (${dup.annee}) — inscriptions ${dup.inscriptionIds.join(', ')}`,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ]);
+  }
+  for (const dup of audit.duplicateNumInscriptions) {
+    rows.push([
+      'N° inscription dupliqué',
+      `${dup.value} (${dup.annee}) — inscriptions ${dup.inscriptionIds.join(', ')}`,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ]);
+  }
+  for (const ins of audit.orphanInscriptions) {
+    rows.push([
+      'Inscription orpheline',
+      `#${ins.id} (étudiant #${ins.idEtudiant})`,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ]);
+  }
+
+  const escape = (value: string) => `"${(value ?? '').replace(/"/g, '""')}"`;
+  return (
+    '\uFEFF' +
+    [headers, ...rows].map((row) => row.map(escape).join(';')).join('\r\n')
+  );
+}
+
+export function exportAuditReportToCsv(
+  audit: DatabaseAuditReport,
+  anneeLabel?: string
+): void {
+  const blob = new Blob([buildAuditReportCsv(audit)], {
+    type: 'text/csv;charset=utf-8;',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yy = String(now.getFullYear()).slice(-2);
+  const suffix = (anneeLabel || 'Toutes').replace(/[^a-zA-Z0-9_-]/g, '_');
+  a.href = url;
+  a.download = `Audit qualite donnees ${suffix} du ${dd}-${mm}-${yy}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function normalizeAllSexCodes(db: ScolariteDatabase): {
   nextDb: ScolariteDatabase;
   updatedCount: number;
