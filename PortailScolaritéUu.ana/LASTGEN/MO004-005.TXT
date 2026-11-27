@@ -1,5 +1,0 @@
-//MO004-005.TXT ANA00004 TO ANA00005
-NIVEAU		TAR	84	nouvelle taille enregistrement : 84
-NIVEAU	GRADE	RUB+		GRADE est une nouvelle rubrique
-PARCOURS	PARCOURS	CLEN*		la rubrique PARCOURS est maintenant une clé
-DOMAINE	DOMAINE	CLEN*		la rubrique DOMAINE est maintenant une clé

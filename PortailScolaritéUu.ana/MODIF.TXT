@@ -1,4 +1,0 @@
-//MO007-008.TXT ANA00007 TO ANA00008
-INSCRIPTION		TAR	160	nouvelle taille enregistrement : 160
-INSCRIPTION	Num_Inscription	RUB+		Num_Inscription est une nouvelle rubrique
-INSCRIPTION	Reference	RUB+		Reference est une nouvelle rubrique
