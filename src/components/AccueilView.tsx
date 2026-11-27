@@ -4,6 +4,7 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
   Download,
   Eye,
   FileCheck2,
@@ -25,11 +26,13 @@ import {
   formatDateFR,
   getBirthdateAnomalyReason,
   loadCertificateSettings,
+  loadDocumentTemplates,
   normalizeNiveauKey,
 } from '../services/database';
 import { EnrichedInscription, ScolariteDatabase } from '../types/scolarite';
 import { BatchReinscriptionModal } from './BatchReinscriptionModal';
 import { CertificateDocument } from './CertificateDocument';
+import { StudentCardDocument } from './StudentCardDocument';
 import { StudentDetailModal } from './StudentDetailModal';
 import { StudentInscriptionModal } from './StudentInscriptionModal';
 
@@ -85,6 +88,7 @@ export function AccueilView({
 
   const [certificateRow, setCertificateRow] = useState<EnrichedInscription | null>(null);
   const [batchPrintActive, setBatchPrintActive] = useState<boolean>(false);
+  const [batchCardPrint, setBatchCardPrint] = useState<boolean>(false);
   const [deleteTarget, setDeleteTarget] = useState<EnrichedInscription | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState<boolean>(false);
 
@@ -109,6 +113,7 @@ export function AccueilView({
   }, [certificateRow, deleteTarget, bulkDeleteOpen]);
 
   const certSettings = useMemo(() => loadCertificateSettings(), []);
+  const docTemplates = useMemo(() => loadDocumentTemplates(), []);
   const allEnriched = useMemo(() => enrichInscriptions(db), [db]);
 
   // Une seule année universitaire de travail : celle choisie dans l'en-tête
@@ -373,8 +378,19 @@ export function AccueilView({
     }, 60);
   };
 
+  const handlePrintSelectedCards = () => {
+    if (selectedRows.length === 0) return;
+    setBatchPrintActive(false);
+    setBatchCardPrint(true);
+    setTimeout(() => {
+      window.print();
+      setBatchCardPrint(false);
+    }, 80);
+  };
+
   const handlePrintRoster = () => {
     setBatchPrintActive(false);
+    setBatchCardPrint(false);
     setCertificateRow(null);
     setTimeout(() => window.print(), 40);
   };
@@ -382,7 +398,8 @@ export function AccueilView({
   const defaultAnneeId =
     db.annees.find((a) => a.annee === effectiveAnnee)?.id ?? db.annees[0]?.id;
 
-  const isCertificatePrinting = Boolean(certificateRow) || batchPrintActive;
+  const isCertificatePrinting =
+    Boolean(certificateRow) || batchPrintActive || batchCardPrint;
 
   return (
     <div className="space-y-5">
@@ -669,6 +686,15 @@ export function AccueilView({
               >
                 <Printer className="w-3.5 h-3.5" />
                 Imprimer certificats ({Math.min(selectedRows.length, 200)})
+              </button>
+              <button
+                type="button"
+                onClick={handlePrintSelectedCards}
+                title="Imprimer les cartes étudiantes (recto / verso)"
+                className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 inline-flex items-center gap-1.5"
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                Cartes ({Math.min(selectedRows.length, 100)})
               </button>
               <button
                 type="button"
@@ -1067,7 +1093,35 @@ export function AccueilView({
         <div className="hidden print:block">
           {selectedRows.map((rec) => (
             <div key={rec.idInscription} className="print-page-break">
-              <CertificateDocument record={rec} settings={certSettings} />
+              <CertificateDocument
+                record={rec}
+                settings={certSettings}
+                template={docTemplates.certificat}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Batch Student Card Print Area (recto / verso par étudiant) */}
+      {batchCardPrint && selectedRows.length > 0 && (
+        <div className="hidden print:block">
+          {selectedRows.slice(0, 100).map((rec) => (
+            <div key={`card-${rec.idInscription}`}>
+              <div className="print-page-break">
+                <StudentCardDocument
+                  record={rec}
+                  template={docTemplates.carte}
+                  side="front"
+                />
+              </div>
+              <div className="print-page-break">
+                <StudentCardDocument
+                  record={rec}
+                  template={docTemplates.carte}
+                  side="back"
+                />
+              </div>
             </div>
           ))}
         </div>
@@ -1096,6 +1150,7 @@ export function AccueilView({
             setReinscribeId(stuId);
             setModalOpen(true);
           }}
+          onUpdateDb={onUpdateDb}
         />
       )}
 
@@ -1175,7 +1230,11 @@ export function AccueilView({
               </div>
             </div>
 
-            <CertificateDocument record={certificateRow} settings={certSettings} />
+            <CertificateDocument
+              record={certificateRow}
+              settings={certSettings}
+              template={docTemplates.certificat}
+            />
           </div>
         </div>
       )}

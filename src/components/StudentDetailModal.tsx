@@ -1,11 +1,14 @@
-import { useEffect, useMemo } from 'react';
+import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Calendar,
+  CreditCard,
   FileCheck2,
   GraduationCap,
+  ImagePlus,
   Pencil,
   Phone,
+  Printer,
   RefreshCw,
   User,
   X,
@@ -15,9 +18,11 @@ import {
   enrichInscriptions,
   formatDateFR,
   getBirthdateAnomalyReason,
+  loadDocumentTemplates,
   normalizeSex,
 } from '../services/database';
 import { EnrichedInscription, Etudiant, ScolariteDatabase } from '../types/scolarite';
+import { StudentCardDocument } from './StudentCardDocument';
 
 interface StudentDetailModalProps {
   db: ScolariteDatabase;
@@ -26,6 +31,8 @@ interface StudentDetailModalProps {
   onEditInscription: (record: EnrichedInscription) => void;
   onPrintCertificate: (record: EnrichedInscription) => void;
   onReinscribe: (etudiantId: number) => void;
+  /** Permet d'enregistrer la photo d'identité de l'étudiant */
+  onUpdateDb?: (nextDb: ScolariteDatabase, toastMessage?: string) => void;
 }
 
 export function StudentDetailModal({
@@ -35,7 +42,11 @@ export function StudentDetailModal({
   onEditInscription,
   onPrintCertificate,
   onReinscribe,
+  onUpdateDb,
 }: StudentDetailModalProps) {
+  const [cardPrint, setCardPrint] = useState<EnrichedInscription | null>(null);
+  const [photoError, setPhotoError] = useState<string>('');
+  const docTemplates = useMemo(() => loadDocumentTemplates(), []);
   const etudiant: Etudiant | undefined = useMemo(
     () => db.etudiants.find((e) => e.id === etudiantId),
     [db.etudiants, etudiantId]
@@ -49,11 +60,53 @@ export function StudentDetailModal({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !cardPrint) onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [onClose, cardPrint]);
+
+  const handlePhotoChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !onUpdateDb) return;
+    if (!file.type.startsWith('image/')) {
+      setPhotoError('Fichier image attendu (JPG, PNG…).');
+      return;
+    }
+    try {
+      // Redimensionnement pour rester dans le quota de stockage local
+      const bitmap = await createImageBitmap(file);
+      const maxSize = 420;
+      const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('canvas');
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
+
+      const nextDb: ScolariteDatabase = {
+        ...db,
+        etudiants: db.etudiants.map((item) =>
+          item.id === etudiantId ? { ...item, photo: dataUrl } : item
+        ),
+      };
+      onUpdateDb(nextDb, 'Photo d’identité enregistrée.');
+      setPhotoError('');
+    } catch {
+      setPhotoError('Impossible de lire cette image.');
+    }
+  };
+
+  const handlePrintCard = (record: EnrichedInscription) => {
+    setCardPrint(record);
+    setTimeout(() => {
+      window.print();
+      setCardPrint(null);
+    }, 120);
+  };
 
   if (!etudiant) return null;
 
@@ -110,15 +163,38 @@ export function StudentDetailModal({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md"
-            aria-label="Fermer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onUpdateDb && (
+              <label
+                className="px-2.5 py-1.5 text-[11px] font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 inline-flex items-center gap-1.5 cursor-pointer"
+                title="Téléverser la photo d'identité (carte étudiant)"
+              >
+                <ImagePlus className="w-3.5 h-3.5 text-blue-600" />
+                {etudiant.photo ? 'Changer la photo' : 'Ajouter une photo'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoChange}
+                  className="hidden"
+                />
+              </label>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md"
+              aria-label="Fermer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+
+        {photoError && (
+          <div className="px-6 py-2 text-[11px] text-red-700 bg-red-50 border-b border-red-200">
+            {photoError}
+          </div>
+        )}
 
         {/* Body */}
         <div className="overflow-y-auto px-6 py-5 space-y-6">
@@ -265,6 +341,14 @@ export function StudentDetailModal({
                       </button>
                       <button
                         type="button"
+                        onClick={() => handlePrintCard(ins)}
+                        className="px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md inline-flex items-center gap-1.5"
+                      >
+                        <CreditCard className="w-3.5 h-3.5" />
+                        Carte
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => onEditInscription(ins)}
                         className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-md inline-flex items-center gap-1.5"
                       >
@@ -278,6 +362,26 @@ export function StudentDetailModal({
             )}
           </div>
         </div>
+
+        {/* Impression de la carte étudiant (recto / verso) */}
+        {cardPrint && (
+          <div className="hidden print:block">
+            <div className="print-page-break">
+              <StudentCardDocument
+                record={cardPrint}
+                template={docTemplates.carte}
+                side="front"
+              />
+            </div>
+            <div className="print-page-break">
+              <StudentCardDocument
+                record={cardPrint}
+                template={docTemplates.carte}
+                side="back"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50/70 flex justify-end">
