@@ -32,6 +32,7 @@ import { CertificateDocument } from './CertificateDocument';
 import { CertificatePrintSheets } from './CertificatePrintSheets';
 import { CertificateTemplateEditor } from './CertificateTemplateEditor';
 import { StudentCardDocument } from './StudentCardDocument';
+import { StudentCardPrintSheets } from './StudentCardPrintSheets';
 
 interface AdministrationViewProps {
   db: ScolariteDatabase;
@@ -766,6 +767,28 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 title="Carte étudiant"
                 description="Format CR80 · recto / verso"
               >
+                <label className="block">
+                  <span className="block text-[11px] font-medium text-slate-600 mb-1">
+                    Impression recto / verso
+                  </span>
+                  <select
+                    value={template.card.printMode}
+                    onChange={(e) =>
+                      patchSection('card', {
+                        printMode: e.target.value === 'side' ? 'side' : 'fold',
+                      })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                  >
+                    <option value="fold">Côte à côte (feuille pliée en 2)</option>
+                    <option value="side">Recto puis verso (2 pages)</option>
+                  </select>
+                  <span className="block text-[10.5px] text-slate-500 mt-1">
+                    {template.card.printMode === 'fold'
+                      ? 'Recto à gauche, verso à droite : imprimez en taille réelle (100 %) puis pliez la feuille au centre.'
+                      : 'Le recto et le verso sont imprimés sur deux pages distinctes.'}
+                  </span>
+                </label>
                 <Toggle
                   label="Afficher la photo de l’étudiant"
                   checked={template.card.showPhoto}
@@ -838,10 +861,9 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {kind === 'certificat' && (
-                    <button
-                      type="button"
-                      onClick={() => setShowPrintSheets((v) => !v)}
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintSheets((v) => !v)}
                       className={`px-2.5 py-1.5 text-[11px] font-medium rounded border inline-flex items-center gap-1 ${
                         showPrintSheets
                           ? 'bg-blue-600 border-blue-600 text-white'
@@ -849,9 +871,12 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                       }`}
                     >
                       <Printer className="w-3 h-3" />
-                      {showPrintSheets ? 'Voir le certificat' : 'Feuille A4'}
-                    </button>
-                  )}
+                      {showPrintSheets
+                        ? kind === 'carte'
+                          ? 'Voir la carte'
+                          : 'Voir le certificat'
+                      : 'Feuille A4'}
+                  </button>
                   {kind === 'carte' && (
                     <Toggle
                       label="Verso"
@@ -887,7 +912,9 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
 
               <div className="p-4 bg-slate-100/70 overflow-auto max-h-[70vh]">
                 <div
-                  style={{ zoom: showPrintSheets && kind === 'certificat' ? zoom * 0.45 : zoom }}
+                  style={{
+                    zoom: showPrintSheets ? zoom * (kind === 'carte' ? 0.32 : 0.45) : zoom,
+                  }}
                   className="mx-auto w-fit"
                 >
                   {kind === 'certificat' ? (
@@ -900,6 +927,11 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                         token={sample.certificateToken}
                       />
                     )
+                  ) : showPrintSheets ? (
+                    <StudentCardPrintSheets
+                      records={[sample]}
+                      template={template}
+                    />
                   ) : (
                     <StudentCardDocument
                       record={sample}
@@ -932,20 +964,7 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
       )}
       {printTargets === 'carte' && (
         <div className="hidden print:block">
-          <div className="print-page-break">
-            <StudentCardDocument
-              record={sample}
-              template={templates.carte}
-              side="front"
-            />
-          </div>
-          <div className="print-page-break">
-            <StudentCardDocument
-              record={sample}
-              template={templates.carte}
-              side="back"
-            />
-          </div>
+          <StudentCardPrintSheets records={[sample]} template={templates.carte} />
         </div>
       )}
     </div>

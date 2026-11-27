@@ -36,6 +36,7 @@ import { BatchReinscriptionModal } from './BatchReinscriptionModal';
 import { CertificateDocument } from './CertificateDocument';
 import { CertificatePrintSheets } from './CertificatePrintSheets';
 import { StudentCardDocument } from './StudentCardDocument';
+import { StudentCardPrintSheets } from './StudentCardPrintSheets';
 import { StudentDetailModal } from './StudentDetailModal';
 import { StudentInscriptionModal } from './StudentInscriptionModal';
 
@@ -1141,24 +1142,10 @@ export function AccueilView({
       {/* Batch Student Card Print Area (recto / verso par étudiant) */}
       {batchCardPrint && selectedRows.length > 0 && (
         <div className="hidden print:block">
-          {selectedRows.slice(0, 100).map((rec) => (
-            <div key={`card-${rec.idInscription}`}>
-              <div className="print-page-break">
-                <StudentCardDocument
-                  record={rec}
-                  template={docTemplates.carte}
-                  side="front"
-                />
-              </div>
-              <div className="print-page-break">
-                <StudentCardDocument
-                  record={rec}
-                  template={docTemplates.carte}
-                  side="back"
-                />
-              </div>
-            </div>
-          ))}
+          <StudentCardPrintSheets
+            records={selectedRows.slice(0, 100)}
+            template={docTemplates.carte}
+          />
         </div>
       )}
 

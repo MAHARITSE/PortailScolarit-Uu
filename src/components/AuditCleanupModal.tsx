@@ -73,6 +73,8 @@ export function AuditCleanupModal({
   const [search, setSearch] = useState('');
   const [editingRow, setEditingRow] = useState<EnrichedInscription | null>(null);
   const [pendingMerge, setPendingMerge] = useState<PendingMerge | null>(null);
+  /** Fiche à conserver pour chaque groupe de doublons (clé = grp.key) */
+  const [keepByGroup, setKeepByGroup] = useState<Record<string, number>>({});
 
   const enrichedByStudentId = useMemo(() => {
     const map = new Map<number, EnrichedInscription>();
@@ -588,8 +590,10 @@ export function AuditCleanupModal({
               {audit.duplicateStudents.length === 0 &&
                 emptyState('Aucun doublon détecté.')}
               {audit.duplicateStudents.map((grp) => {
-                const keep = grp.etudiants[0];
-                const others = grp.etudiants.slice(1);
+                const chosenId = keepByGroup[grp.key];
+                const keep =
+                  grp.etudiants.find((e) => e.id === chosenId) ?? grp.etudiants[0];
+                const others = grp.etudiants.filter((e) => e.id !== keep.id);
                 return (
                   <div
                     key={grp.key}
@@ -601,7 +605,7 @@ export function AuditCleanupModal({
                         {grp.reason}
                       </span>
                       <span className="text-[11px] text-amber-800">
-                        {grp.etudiants.length} fiche(s)
+                        {grp.etudiants.length} fiche(s) · choisissez celle à conserver
                       </span>
                     </div>
 
@@ -611,21 +615,37 @@ export function AuditCleanupModal({
                           key={e.id}
                           className="px-4 py-2.5 flex items-center justify-between gap-3 text-xs"
                         >
-                          <div className="min-w-0">
-                            <p className="font-semibold text-slate-900 truncate">
-                              <span className="font-mono text-slate-400 mr-1.5">
-                                #{e.id}
+                          <label className="flex items-start gap-2 min-w-0 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`keep-${grp.key}`}
+                              checked={e.id === keep.id}
+                              onChange={() => {
+                                setKeepByGroup((prev) => ({
+                                  ...prev,
+                                  [grp.key]: e.id,
+                                }));
+                                setPendingMerge(null);
+                              }}
+                              title="Conserver cette fiche"
+                              className="mt-0.5 accent-emerald-600 shrink-0"
+                            />
+                            <span className="min-w-0">
+                              <span className="block font-semibold text-slate-900 truncate">
+                                <span className="font-mono text-slate-400 mr-1.5">
+                                  #{e.id}
+                                </span>
+                                {e.nom} {e.prenom}
                               </span>
-                              {e.nom} {e.prenom}
-                            </p>
-                            <p className="text-slate-500 mt-0.5 font-mono text-[11px] tabular-nums">
-                              {formatDateFR(e.dateNaissance) || '—'} ·{' '}
-                              {e.telephone || 'Sans tél'} ·{' '}
-                              {e.numeroCin || 'Sans CIN'}
-                            </p>
-                          </div>
+                              <span className="block text-slate-500 mt-0.5 font-mono text-[11px] tabular-nums">
+                                {formatDateFR(e.dateNaissance) || '—'} ·{' '}
+                                {e.telephone || 'Sans tél'} ·{' '}
+                                {e.numeroCin || 'Sans CIN'}
+                              </span>
+                            </span>
+                          </label>
                           {e.id === keep.id ? (
-                            <span className="px-2 py-1 text-[11px] font-semibold text-slate-600 bg-slate-100 rounded shrink-0">
+                            <span className="px-2 py-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded shrink-0">
                               Fiche conservée
                             </span>
                           ) : (

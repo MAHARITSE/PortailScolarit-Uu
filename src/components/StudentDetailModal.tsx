@@ -23,6 +23,7 @@ import {
 } from '../services/database';
 import { EnrichedInscription, Etudiant, ScolariteDatabase } from '../types/scolarite';
 import { StudentCardDocument } from './StudentCardDocument';
+import { StudentCardPrintSheets } from './StudentCardPrintSheets';
 
 interface StudentDetailModalProps {
   db: ScolariteDatabase;
@@ -363,23 +364,13 @@ export function StudentDetailModal({
           </div>
         </div>
 
-        {/* Impression de la carte étudiant (recto / verso) */}
+        {/* Impression de la carte étudiant (recto / verso, pliée en 2) */}
         {cardPrint && (
           <div className="hidden print:block">
-            <div className="print-page-break">
-              <StudentCardDocument
-                record={cardPrint}
-                template={docTemplates.carte}
-                side="front"
-              />
-            </div>
-            <div className="print-page-break">
-              <StudentCardDocument
-                record={cardPrint}
-                template={docTemplates.carte}
-                side="back"
-              />
-            </div>
+            <StudentCardPrintSheets
+              records={[cardPrint]}
+              template={docTemplates.carte}
+            />
           </div>
         )}
 

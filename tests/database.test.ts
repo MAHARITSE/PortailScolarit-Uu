@@ -359,6 +359,53 @@ describe('Certificat rédigé en phrase (sans tableau)', () => {
   });
 });
 
+
+describe('Impression des cartes & choix de la fiche à conserver', () => {
+  it('imprime recto/verso côte à côte par défaut (feuille pliée en 2)', () => {
+    assert.equal(DEFAULT_DOCUMENT_TEMPLATES.carte.card.printMode, 'fold');
+    const side = mergeDocumentTemplate('carte', { card: { printMode: 'side' } } as never);
+    assert.equal(side.card.printMode, 'side');
+    // Les autres réglages de la carte sont conservés
+    const fold = mergeDocumentTemplate('carte', { card: { printMode: 'fold' } } as never);
+    assert.equal(fold.card.showPhoto, DEFAULT_DOCUMENT_TEMPLATES.carte.card.showPhoto);
+  });
+
+  it('fusionne dans la fiche choisie, même s’il ne s’agit pas de la première', () => {
+    const db = getSeedDatabase();
+    const group = auditDatabase(db).duplicateStudents[0];
+    const [first, second] = group.etudiants;
+    const inscriptionsBefore = db.inscriptions.filter(
+      (i) => i.idEtudiant === first.id || i.idEtudiant === second.id
+    ).length;
+
+    // On conserve la SECONDE fiche et on supprime la première
+    const next = mergeDuplicateStudents(db, second.id, first.id);
+    assert.equal(next.etudiants.some((e) => e.id === first.id), false);
+    assert.equal(next.etudiants.some((e) => e.id === second.id), true);
+    const relinked = next.inscriptions.filter((i) => i.idEtudiant === second.id).length;
+    assert.equal(relinked, inscriptionsBefore);
+  });
+
+  it('remplit les champs vides de la fiche conservée', () => {
+    const db = getSeedDatabase();
+    const base = db.etudiants[0];
+    const next = mergeDuplicateStudents(
+      {
+        ...db,
+        etudiants: [
+          { ...base, id: 9001, telephone: '', numeroCin: '' },
+          { ...base, id: 9002, telephone: '034 00 000 00', numeroCin: '123456789012' },
+        ],
+        inscriptions: [],
+      },
+      9001,
+      9002
+    );
+    assert.equal(next.etudiants[0].telephone, '034 00 000 00');
+    assert.equal(next.etudiants[0].numeroCin, '123456789012');
+  });
+});
+
 describe('Rapport d’audit exportable', () => {
   it('produit un CSV complet (BOM UTF-8, séparateur « ; », une ligne par anomalie)', () => {
     const db = getSeedDatabase();

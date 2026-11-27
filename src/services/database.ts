@@ -1373,6 +1373,7 @@ function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
       marginMm: 12,
     },
     card: {
+      printMode: 'fold',
       showPhoto: true,
       photoHint: 'Photo non fournie',
       headerColor: '#1d4ed8',

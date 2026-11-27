@@ -63,12 +63,14 @@
     max-width: none !important;
   }
 
-  .certificate-sheet {
+  .certificate-sheet,
+  .card-sheet {
     break-after: page;
     page-break-after: always;
   }
 
-  .certificate-sheet:last-child {
+  .certificate-sheet:last-child,
+  .card-sheet:last-child {
     break-after: auto;
     page-break-after: auto;
   }

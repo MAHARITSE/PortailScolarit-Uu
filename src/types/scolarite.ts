@@ -225,6 +225,9 @@ export type FieldInputType = 'text' | 'textarea' | 'date' | 'number' | 'select';
 
 /** Présentation du corps du certificat : phrase rédigée ou tableau. */
 export type CertificateBodyMode = 'phrase' | 'table';
+
+/** Impression de la carte étudiant : pliage recto/verso ou deux pages. */
+export type CardPrintMode = 'fold' | 'side';
 export type FieldDateFormat = 'JJ/MM/AAAA' | 'AAAA-MM-JJ';
 
 export interface FieldDefinition {
@@ -388,6 +391,8 @@ export interface DocumentTemplate {
     fontSize: number;
   };
   card: {
+    /** `fold` : recto et verso côte à côte sur une A4 à plier en 2 · `side` : 2 pages */
+    printMode: CardPrintMode;
     showPhoto: boolean;
     photoHint: string;
     headerColor: string;
