@@ -49,9 +49,28 @@
     margin: 12mm;
   }
 
+  html,
   body {
     background: #ffffff !important;
     color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Les feuilles A4 du certificat gèrent elles-mêmes leurs marges */
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+
+  .certificate-sheet {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .certificate-sheet:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 
   .no-print {

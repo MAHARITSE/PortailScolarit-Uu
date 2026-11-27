@@ -17,19 +17,24 @@ import {
 import {
   buildNiveauFilterOptions,
   enrichInscriptions,
+  ensureCertificateIdentity,
   formatDateFR,
   loadCertificateSettings,
   loadDocumentTemplates,
   normalizeNiveauKey,
+  registerCertificate,
   saveCertificateSettings,
+  saveDocumentTemplates,
   verifyCertificateQuery,
 } from '../services/database';
 import {
   CertificateSettings,
+  DocumentTemplate,
   EnrichedInscription,
   ScolariteDatabase,
 } from '../types/scolarite';
 import { CertificateDocument } from './CertificateDocument';
+import { CertificatePrintSheets } from './CertificatePrintSheets';
 
 interface CertificatsViewProps {
   db: ScolariteDatabase;
@@ -37,6 +42,8 @@ interface CertificatsViewProps {
   anneeActive: string;
   /** Ouvre la page Administration · Modèles de documents */
   onOpenTemplates?: () => void;
+  /** Persiste les jetons / numéros de certificat générés */
+  onUpdateDb?: (nextDb: ScolariteDatabase, toastMessage?: string) => void;
 }
 
 const PAGE_SIZE = 50;
@@ -46,6 +53,7 @@ export function CertificatsView({
   db,
   anneeActive,
   onOpenTemplates,
+  onUpdateDb,
 }: CertificatsViewProps) {
   const [search, setSearch] = useState('');
   const annee = anneeActive;
@@ -64,7 +72,23 @@ export function CertificatsView({
     loadCertificateSettings()
   );
   // Modèle de document défini dans la page Administration
-  const docTemplates = useMemo(() => loadDocumentTemplates(), []);
+  const [docTemplates, setDocTemplates] = useState(() => loadDocumentTemplates());
+  const template = docTemplates.certificat;
+
+  const updateTemplate = (patch: Partial<DocumentTemplate>) => {
+    setDocTemplates((prev) => {
+      const next = {
+        ...prev,
+        certificat: { ...prev.certificat, ...patch },
+      };
+      saveDocumentTemplates(next);
+      return next;
+    });
+  };
+
+  const updatePrint = (patch: Partial<DocumentTemplate['print']>) => {
+    updateTemplate({ print: { ...template.print, ...patch } });
+  };
   const [showSettings, setShowSettings] = useState(false);
 
   // Verifier modal
@@ -193,9 +217,50 @@ export function CertificatsView({
     });
   };
 
+  const openPreview = (item: EnrichedInscription) => {
+    const result = ensureCertificateIdentity(db, item.idInscription);
+    if (result.created && onUpdateDb && result.record) {
+      onUpdateDb(
+        result.nextDb,
+        `Certificat n° ${result.numeroCertificat} réservé pour ${item.nom} ${item.prenom}.`
+      );
+    }
+    setPreviewItem(result.record ?? item);
+  };
+
   const triggerPrint = (targets: EnrichedInscription[]) => {
     if (targets.length === 0) return;
-    setPrintTargets(targets);
+    let nextDb = db;
+    const prepared: EnrichedInscription[] = [];
+    for (const target of targets) {
+      const result = ensureCertificateIdentity(nextDb, target.idInscription);
+      nextDb = result.nextDb;
+      const record = result.record ?? target;
+      prepared.push(record);
+      if (result.created) {
+        registerCertificate({
+          token: result.token,
+          idInscription: record.idInscription,
+          idEtudiant: record.idEtudiant,
+          numeroCertificat: result.numeroCertificat,
+          nom: record.nom,
+          prenom: record.prenom,
+          mention: record.mention,
+          niveau: record.niveau,
+          annee: record.annee,
+          issuedAt: new Date().toISOString(),
+        });
+      }
+    }
+    if (onUpdateDb && nextDb !== db) {
+      onUpdateDb(
+        nextDb,
+        prepared.length > 1
+          ? `${prepared.length} certificats numérotés et horodatés.`
+          : 'Certificat numéroté et horodaté.'
+      );
+    }
+    setPrintTargets(prepared);
     setTimeout(() => {
       window.print();
     }, 80);
@@ -283,6 +348,107 @@ export function CertificatsView({
                 Tout imprimer ({filtered.length})
               </button>
             </div>
+          </div>
+
+          {/* Mise en page d'impression (1 ou 2 certificats par feuille A4) */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-md text-xs">
+            <span className="font-semibold text-slate-700 inline-flex items-center gap-1.5">
+              <Printer className="w-3.5 h-3.5 text-blue-600" />
+              Impression
+            </span>
+
+            <label className="flex items-center gap-1.5 text-slate-600">
+              Par feuille
+              <select
+                value={template.print.perSheet}
+                onChange={(e) =>
+                  updatePrint({ perSheet: Number(e.target.value) === 2 ? 2 : 1 })
+                }
+                className="px-2 py-1 border border-slate-300 rounded bg-white"
+              >
+                <option value={1}>1 certificat A4</option>
+                <option value={2}>2 certificats A5</option>
+              </select>
+            </label>
+
+            <label className="flex items-center gap-1.5 text-slate-600">
+              Orientation
+              <select
+                value={template.print.orientation}
+                onChange={(e) =>
+                  updatePrint({
+                    orientation:
+                      e.target.value === 'landscape' ? 'landscape' : 'portrait',
+                  })
+                }
+                className="px-2 py-1 border border-slate-300 rounded bg-white"
+              >
+                <option value="portrait">Portrait</option>
+                <option value="landscape">Paysage</option>
+              </select>
+            </label>
+
+            {template.print.perSheet === 2 && (
+              <>
+                <label className="flex items-center gap-1.5 text-slate-600">
+                  Disposition
+                  <select
+                    value={template.print.twoUpLayout}
+                    onChange={(e) =>
+                      updatePrint({
+                        twoUpLayout:
+                          e.target.value === 'stacked'
+                            ? 'stacked'
+                            : 'side-by-side',
+                      })
+                    }
+                    className="px-2 py-1 border border-slate-300 rounded bg-white"
+                  >
+                    <option value="side-by-side">Côte à côte</option>
+                    <option value="stacked">L’un au-dessus de l’autre</option>
+                  </select>
+                </label>
+
+                <label className="flex items-center gap-1.5 text-slate-600">
+                  Contenu
+                  <select
+                    value={template.print.duplicateSame ? 'same' : 'sequence'}
+                    onChange={(e) =>
+                      updatePrint({ duplicateSame: e.target.value === 'same' })
+                    }
+                    className="px-2 py-1 border border-slate-300 rounded bg-white"
+                  >
+                    <option value="same">Même élève (souche / archive)</option>
+                    <option value="sequence">Deux élèves différents</option>
+                  </select>
+                </label>
+
+                <label className="flex items-center gap-1.5 text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={template.print.cutLine}
+                    onChange={(e) => updatePrint({ cutLine: e.target.checked })}
+                    className="rounded border-slate-300 text-blue-600"
+                  />
+                  Ligne de découpe
+                </label>
+              </>
+            )}
+
+            <label className="flex items-center gap-1.5 text-slate-600">
+              Marges
+              <input
+                type="number"
+                min={0}
+                max={30}
+                value={template.print.marginMm}
+                onChange={(e) =>
+                  updatePrint({ marginMm: Number(e.target.value) || 0 })
+                }
+                className="w-16 px-2 py-1 border border-slate-300 rounded bg-white font-mono"
+              />
+              mm
+            </label>
           </div>
 
           {/* Certificate Settings Panel */}
@@ -523,7 +689,7 @@ export function CertificatsView({
                           <div className="inline-flex items-center gap-1.5">
                             <button
                               type="button"
-                              onClick={() => setPreviewItem(item)}
+                              onClick={() => openPreview(item)}
                               className="px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded"
                             >
                               Aperçu
@@ -611,7 +777,8 @@ export function CertificatsView({
             <CertificateDocument
               record={previewItem}
               settings={settings}
-              template={docTemplates.certificat}
+              template={template}
+              token={previewItem.certificateToken}
             />
           </div>
         </div>
@@ -705,18 +872,14 @@ export function CertificatsView({
         </div>
       )}
 
-      {/* Batch Print Container */}
+      {/* Batch Print Container — 1 ou 2 certificats par feuille A4 */}
       {!previewItem && printTargets.length > 0 && (
-        <div className="hidden print:block space-y-0">
-          {printTargets.map((item) => (
-            <div key={item.idInscription} className="print-page-break">
-              <CertificateDocument
-                record={item}
-                settings={settings}
-                template={docTemplates.certificat}
-              />
-            </div>
-          ))}
+        <div className="hidden print:block">
+          <CertificatePrintSheets
+            records={printTargets}
+            template={template}
+            settings={settings}
+          />
         </div>
       )}
     </div>

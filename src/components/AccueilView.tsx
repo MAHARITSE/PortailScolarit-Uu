@@ -25,13 +25,16 @@ import {
   exportInscriptionsToXlsx,
   formatDateFR,
   getBirthdateAnomalyReason,
+  ensureCertificateIdentity,
   loadCertificateSettings,
   loadDocumentTemplates,
   normalizeNiveauKey,
+  registerCertificate,
 } from '../services/database';
 import { EnrichedInscription, ScolariteDatabase } from '../types/scolarite';
 import { BatchReinscriptionModal } from './BatchReinscriptionModal';
 import { CertificateDocument } from './CertificateDocument';
+import { CertificatePrintSheets } from './CertificatePrintSheets';
 import { StudentCardDocument } from './StudentCardDocument';
 import { StudentDetailModal } from './StudentDetailModal';
 import { StudentInscriptionModal } from './StudentInscriptionModal';
@@ -89,6 +92,7 @@ export function AccueilView({
   const [certificateRow, setCertificateRow] = useState<EnrichedInscription | null>(null);
   const [batchPrintActive, setBatchPrintActive] = useState<boolean>(false);
   const [batchCardPrint, setBatchCardPrint] = useState<boolean>(false);
+  const [batchCertRecords, setBatchCertRecords] = useState<EnrichedInscription[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<EnrichedInscription | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState<boolean>(false);
 
@@ -370,12 +374,50 @@ export function AccueilView({
     setBulkDeleteOpen(false);
   };
 
+  const openCertificate = (row: EnrichedInscription) => {
+    const result = ensureCertificateIdentity(db, row.idInscription);
+    if (result.created && onUpdateDb && result.record) {
+      onUpdateDb(
+        result.nextDb,
+        `Certificat n° ${result.numeroCertificat} réservé pour ${row.nom} ${row.prenom}.`
+      );
+    }
+    setBatchPrintActive(false);
+    setCertificateRow(result.record ?? row);
+  };
+
   const handlePrintSelectedCertificates = () => {
     if (selectedRows.length === 0) return;
+    let nextDb = db;
+    const prepared: EnrichedInscription[] = [];
+    for (const target of selectedRows) {
+      const result = ensureCertificateIdentity(nextDb, target.idInscription);
+      nextDb = result.nextDb;
+      const record = result.record ?? target;
+      prepared.push(record);
+      if (result.created) {
+        registerCertificate({
+          token: result.token,
+          idInscription: record.idInscription,
+          idEtudiant: record.idEtudiant,
+          numeroCertificat: result.numeroCertificat,
+          nom: record.nom,
+          prenom: record.prenom,
+          mention: record.mention,
+          niveau: record.niveau,
+          annee: record.annee,
+          issuedAt: new Date().toISOString(),
+        });
+      }
+    }
+    if (nextDb !== db) {
+      onUpdateDb(nextDb, `${prepared.length} certificat(s) numéroté(s) et horodaté(s).`);
+    }
+    setBatchCertRecords(prepared);
     setBatchPrintActive(true);
     setTimeout(() => {
       window.print();
-    }, 60);
+    }, 80);
   };
 
   const handlePrintSelectedCards = () => {
@@ -934,10 +976,7 @@ export function AccueilView({
                             </button>
                             <button
                               type="button"
-                              onClick={() => {
-                                setBatchPrintActive(false);
-                                setCertificateRow(row);
-                              }}
+                              onClick={() => openCertificate(row)}
                               title="Imprimer le certificat de scolarité"
                               className="p-1.5 text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
                             >
@@ -1089,17 +1128,13 @@ export function AccueilView({
       )}
 
       {/* Batch Certificate Print Area for Selected Rows */}
-      {batchPrintActive && selectedRows.length > 0 && (
+      {batchPrintActive && batchCertRecords.length > 0 && (
         <div className="hidden print:block">
-          {selectedRows.map((rec) => (
-            <div key={rec.idInscription} className="print-page-break">
-              <CertificateDocument
-                record={rec}
-                settings={certSettings}
-                template={docTemplates.certificat}
-              />
-            </div>
-          ))}
+          <CertificatePrintSheets
+            records={batchCertRecords}
+            template={docTemplates.certificat}
+            settings={certSettings}
+          />
         </div>
       )}
 
@@ -1141,8 +1176,7 @@ export function AccueilView({
           }}
           onPrintCertificate={(rec) => {
             setDetailStudentId(null);
-            setBatchPrintActive(false);
-            setCertificateRow(rec);
+            openCertificate(rec);
           }}
           onReinscribe={(stuId) => {
             setDetailStudentId(null);
@@ -1234,6 +1268,7 @@ export function AccueilView({
               record={certificateRow}
               settings={certSettings}
               template={docTemplates.certificat}
+              token={certificateRow.certificateToken}
             />
           </div>
         </div>

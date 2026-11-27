@@ -5,9 +5,12 @@ import {
   BreakdownItem,
   CertificateSettings,
   DashboardStats,
+  CertificateTokenEntry,
   DocumentKind,
   DocumentTemplate,
   DocumentTemplates,
+  FieldDefinition,
+  QrSize,
   DatabaseAuditReport,
   DuplicateCodeEntry,
   DuplicateStudentGroup,
@@ -509,6 +512,10 @@ export function enrichInscriptions(db: ScolariteDatabase): EnrichedInscription[]
       parcours: parcours ? parcours.parcours : '— Aucun —',
       annee: annee.annee,
       photo: etu.photo ?? '',
+      customValues: ins.customValues ?? {},
+      numeroCertificat: ins.numeroCertificat ?? '',
+      dateDelivrance: ins.dateDelivrance ?? '',
+      certificateToken: ins.certificateToken ?? '',
     });
   }
 
@@ -884,6 +891,373 @@ const DOC_TEMPLATE_ROWS: { id: string; label: string }[] = [
   { id: 'reference', label: 'Référence' },
 ];
 
+/** Champs standard proposés dans l'administration (ordre par défaut). */
+export const STANDARD_FIELD_DEFINITIONS: FieldDefinition[] = [
+  { id: 'nom', label: 'Nom', type: 'text', enabled: true, required: true, custom: false, uppercase: true, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'prenom', label: 'Prénom(s)', type: 'text', enabled: true, required: true, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'dateNaissance', label: 'Date de naissance', type: 'date', enabled: true, required: true, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'lieuNaissance', label: 'Lieu de naissance', type: 'text', enabled: true, required: false, custom: false, uppercase: true, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'niveau', label: 'Classe / Niveau', type: 'text', enabled: true, required: true, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'mention', label: 'Mention', type: 'text', enabled: true, required: false, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'annee', label: 'Année scolaire', type: 'text', enabled: true, required: true, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'matricule', label: 'Matricule', type: 'text', enabled: true, required: false, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'numeroCertificat', label: 'Numéro de certificat', type: 'text', enabled: true, required: false, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'dateDelivrance', label: 'Date de délivrance', type: 'date', enabled: true, required: false, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'faculte', label: 'Établissement / Faculté', type: 'text', enabled: false, required: false, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'domaine', label: 'Domaine', type: 'text', enabled: false, required: false, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'parcours', label: 'Parcours', type: 'text', enabled: false, required: false, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'numeroCin', label: 'CIN', type: 'text', enabled: false, required: false, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '999 999 999 999', options: [], help: '', fullWidth: false },
+  { id: 'telephone', label: 'Téléphone', type: 'text', enabled: false, required: false, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'nationalite', label: 'Nationalité', type: 'text', enabled: false, required: false, custom: false, uppercase: true, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+  { id: 'filiation', label: 'Filiation (père / mère)', type: 'text', enabled: false, required: false, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: true },
+  { id: 'reference', label: 'Référence', type: 'text', enabled: false, required: false, custom: false, uppercase: false, dateFormat: 'JJ/MM/AAAA', mask: '', options: [], help: '', fullWidth: false },
+];
+
+/** Variables insérables dans le corps du certificat. */
+export const CERTIFICATE_VARIABLES: { key: string; label: string }[] = [
+  { key: 'civilite', label: 'Civilité' },
+  { key: 'nom', label: 'Nom' },
+  { key: 'prenom', label: 'Prénom(s)' },
+  { key: 'nom_complet', label: 'Nom complet' },
+  { key: 'date_naissance', label: 'Date de naissance' },
+  { key: 'lieu_naissance', label: 'Lieu de naissance' },
+  { key: 'classe', label: 'Classe / Niveau' },
+  { key: 'mention', label: 'Mention' },
+  { key: 'annee_scolaire', label: 'Année scolaire' },
+  { key: 'matricule', label: 'Matricule' },
+  { key: 'numero_certificat', label: 'N° de certificat' },
+  { key: 'date_delivrance', label: 'Date de délivrance' },
+  { key: 'faculte', label: 'Établissement' },
+  { key: 'token', label: 'Jeton de vérification' },
+];
+
+export const QR_PIXEL_SIZES: Record<QrSize, number> = {
+  small: 72,
+  medium: 96,
+  large: 128,
+};
+
+const CERT_REGISTRY_KEY = 'portail_scolarite_uu_cert_registry_v1';
+
+/** Valeur affichée pour un champ du certificat. */
+export function getCertificateFieldValue(
+  record: EnrichedInscription,
+  field: FieldDefinition,
+  options: { numeroCertificat?: string; dateDelivrance?: string } = {}
+): string {
+  const formatDate = (iso: string) => {
+    if (!iso) return '';
+    return field.dateFormat === 'AAAA-MM-JJ' ? iso : formatDateFR(iso);
+  };
+  switch (field.id) {
+    case 'nom':
+      return record.nom;
+    case 'prenom':
+      return record.prenom;
+    case 'dateNaissance':
+      return formatDate(record.dateNaissance);
+    case 'lieuNaissance':
+      return record.lieuNaissance;
+    case 'niveau':
+      return record.niveau;
+    case 'mention':
+      return record.mention;
+    case 'annee':
+      return record.annee;
+    case 'matricule':
+      return record.numInscription;
+    case 'numeroCertificat':
+      return options.numeroCertificat || record.numeroCertificat;
+    case 'dateDelivrance':
+      return formatDate(options.dateDelivrance || record.dateDelivrance);
+    case 'faculte':
+      return record.faculte;
+    case 'domaine':
+      return record.domaine;
+    case 'parcours':
+      return record.parcours === '— Aucun —' ? '' : record.parcours;
+    case 'numeroCin':
+      return record.numeroCin;
+    case 'telephone':
+      return record.telephone;
+    case 'nationalite':
+      return record.nationalite;
+    case 'filiation':
+      return [record.nomPere, record.nomMere].filter(Boolean).join(' · ');
+    case 'reference':
+      return record.reference;
+    default:
+      return record.customValues?.[field.id] ?? '';
+  }
+}
+
+/** Applique le formatage configuré (majuscules, masque) à une valeur. */
+export function formatFieldValue(field: FieldDefinition, raw: string): string {
+  let value = (raw ?? '').trim();
+  if (!value) return '';
+  if (field.type === 'date') {
+    value = parseDateToISO(value) || value;
+    return field.dateFormat === 'AAAA-MM-JJ' ? value : formatDateFR(value);
+  }
+  if (field.uppercase) value = value.toLocaleUpperCase('fr-FR');
+  if (field.mask) {
+    const digits = value.replace(/\D+/g, '');
+    let index = 0;
+    let masked = '';
+    for (const char of field.mask) {
+      if (index >= digits.length) break;
+      masked += char === '9' ? digits[index++] : char;
+    }
+    if (digits.length > index) masked += digits.slice(index);
+    return masked;
+  }
+  return value;
+}
+
+/** Variables disponibles dans le corps du certificat. */
+export function buildCertificateVariables(
+  record: EnrichedInscription,
+  template: DocumentTemplate,
+  extra: { token?: string; numeroCertificat?: string; dateDelivrance?: string } = {}
+): Record<string, string> {
+  const numero = extra.numeroCertificat || record.numeroCertificat;
+  const delivrance = extra.dateDelivrance || record.dateDelivrance;
+  const isFemale = (record.sexeNormalized ?? normalizeSex(record.sexe)) === 'F';
+
+  const vars: Record<string, string> = {
+    civilite: isFemale ? 'Mme/Mlle' : 'M.',
+    nom: formatFieldValue({ ...STANDARD_FIELD_DEFINITIONS[0] }, record.nom),
+    prenom: record.prenom,
+    nom_complet: `${record.nom} ${record.prenom}`.trim(),
+    date_naissance: formatDateFR(record.dateNaissance),
+    lieu_naissance: record.lieuNaissance,
+    classe: record.niveau,
+    niveau: record.niveau,
+    mention: record.mention,
+    annee_scolaire: record.annee,
+    annee: record.annee,
+    matricule: record.numInscription,
+    numero_certificat: numero,
+    date_delivrance: formatDateFR(delivrance),
+    faculte: record.faculte,
+    domaine: record.domaine,
+    filiere: record.mention,
+    token: extra.token ?? record.certificateToken,
+    reference: record.reference,
+  };
+
+  for (const field of template.fields) {
+    if (!field.custom) continue;
+    vars[field.id] = formatFieldValue(field, record.customValues?.[field.id] ?? '');
+  }
+  return vars;
+}
+
+/** Remplace les {{variables}} du corps du certificat. */
+export function renderCertificateBody(
+  bodyTemplate: string,
+  variables: Record<string, string>
+): string {
+  return (bodyTemplate ?? '').replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (match, key) => {
+    const value = variables[key];
+    return value === undefined || value === '' ? match : value;
+  });
+}
+
+/** Taille en pixels du QR code selon le préréglage choisi. */
+export function getQrPixelSize(template: DocumentTemplate, scale = 1): number {
+  const base = QR_PIXEL_SIZES[template.qr.preset] ?? template.qr.size ?? 96;
+  return Math.round(base * scale);
+}
+
+/** Contenu encodé dans le QR code du certificat (URL, résumé ou les deux). */
+export function buildCertificateQrPayload(
+  record: EnrichedInscription,
+  template: DocumentTemplate,
+  extra: { token?: string } = {}
+): string {
+  const token = extra.token || record.certificateToken;
+  const numero = record.numeroCertificat;
+  const fill = (value: string) =>
+    value
+      .replace(/\{\{\s*token\s*\}\}/g, token)
+      .replace(/\{\{\s*numero_certificat\s*\}\}/g, numero)
+      .replace(/\{\{\s*matricule\s*\}\}/g, record.numInscription)
+      .replace(/\{\{\s*annee\s*\}\}/g, record.annee);
+
+  const url = fill(template.qr.urlTemplate || '');
+  const summary = [
+    template.qr.header,
+    `N° certificat : ${numero || '—'}`,
+    `Matricule     : ${record.numInscription || '—'}`,
+    `Étudiant      : ${record.nom} ${record.prenom}`.trim(),
+    `Classe        : ${record.niveau} · ${record.mention}`,
+    `Année         : ${record.annee}`,
+    `Émis le       : ${formatDateFR(record.dateDelivrance) || formatDateFR(new Date().toISOString().slice(0, 10))}`,
+    `Jeton         : ${token || '—'}`,
+    '=========================',
+  ].join('\n');
+
+  if (template.qr.mode === 'url') return url || summary;
+  if (template.qr.mode === 'both') return `${url}\n${summary}`;
+  return summary;
+}
+
+/** Jeton unique (16 caractères hexadécimaux) anti-falsification. */
+export function generateCertificateToken(): string {
+  const cryptoObj = typeof crypto !== 'undefined' ? crypto : undefined;
+  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
+    return cryptoObj.randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase();
+  }
+  let token = '';
+  for (let i = 0; i < 16; i += 1) {
+    token += Math.floor(Math.random() * 16).toString(16).toUpperCase();
+  }
+  return token;
+}
+
+/** Numéro de certificat lisible : CERT/2024-2025/000123 (ou n° d'inscription). */
+export function formatCertificateNumber(
+  annee: string,
+  numInscription: string,
+  sequence: number
+): string {
+  const base = (numInscription || '').trim() || String(sequence);
+  return `CERT/${annee || '----'}/${String(sequence).padStart(6, '0')}-${base}`;
+}
+
+export function buildCertificateNumber(
+  record: EnrichedInscription,
+  sequence?: number
+): string {
+  return formatCertificateNumber(
+    record.annee,
+    record.numInscription,
+    sequence ?? record.idInscription
+  );
+}
+
+/**
+ * Garantit qu'une inscription possède un numéro de certificat, une date de
+ * délivrance et un jeton unique. Les valeurs existantes sont conservées.
+ */
+export function ensureCertificateIdentity(
+  db: ScolariteDatabase,
+  idInscription: number
+): {
+  nextDb: ScolariteDatabase;
+  record: EnrichedInscription | null;
+  token: string;
+  numeroCertificat: string;
+  dateDelivrance: string;
+  created: boolean;
+} {
+  const before = enrichInscriptions(db).find(
+    (row) => row.idInscription === idInscription
+  ) ?? null;
+  if (!before) {
+    return {
+      nextDb: db,
+      record: null,
+      token: '',
+      numeroCertificat: '',
+      dateDelivrance: '',
+      created: false,
+    };
+  }
+  if (before.certificateToken && before.numeroCertificat && before.dateDelivrance) {
+    return {
+      nextDb: db,
+      record: before,
+      token: before.certificateToken,
+      numeroCertificat: before.numeroCertificat,
+      dateDelivrance: before.dateDelivrance,
+      created: false,
+    };
+  }
+
+  const nextDb = structuredClone(db);
+  const index = nextDb.inscriptions.findIndex((row) => row.id === idInscription);
+  if (index === -1) {
+    return {
+      nextDb: db,
+      record: before,
+      token: '',
+      numeroCertificat: '',
+      dateDelivrance: '',
+      created: false,
+    };
+  }
+  const target = nextDb.inscriptions[index];
+  target.certificateToken = target.certificateToken || generateCertificateToken();
+  target.numeroCertificat =
+    target.numeroCertificat || buildCertificateNumber(before);
+  target.dateDelivrance =
+    target.dateDelivrance || new Date().toISOString().slice(0, 10);
+
+  const record = enrichInscriptions(nextDb).find(
+    (row) => row.idInscription === idInscription
+  ) ?? before;
+
+  return {
+    nextDb,
+    record,
+    token: target.certificateToken,
+    numeroCertificat: target.numeroCertificat,
+    dateDelivrance: target.dateDelivrance,
+    created: true,
+  };
+}
+
+export function loadCertificateRegistry(): CertificateTokenEntry[] {
+  try {
+    if (typeof localStorage === 'undefined') return [];
+    const raw = localStorage.getItem(CERT_REGISTRY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as CertificateTokenEntry[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Vide l'historique local des certificats émis. */
+export function clearCertificateRegistry(): void {
+  try {
+    localStorage.removeItem(CERT_REGISTRY_KEY);
+  } catch {
+    /* stockage indisponible */
+  }
+}
+
+export function registerCertificate(entry: CertificateTokenEntry): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const registry = loadCertificateRegistry().filter(
+      (item) => item.token !== entry.token
+    );
+    registry.unshift(entry);
+    localStorage.setItem(
+      CERT_REGISTRY_KEY,
+      JSON.stringify(registry.slice(0, 500))
+    );
+  } catch {
+    // ignore registry errors
+  }
+}
+
+export function findCertificateByToken(
+  token: string
+): CertificateTokenEntry | null {
+  const normalized = token.trim().toUpperCase();
+  if (!normalized) return null;
+  return (
+    loadCertificateRegistry().find(
+      (entry) => entry.token.toUpperCase() === normalized
+    ) ?? null
+  );
+}
+
 function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
   return {
     version: 1,
@@ -915,7 +1289,19 @@ function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
       name: '',
       place: 'Toliara',
       showDate: true,
+      imageUrl: '',
+      showImage: false,
     },
+    footer: {
+      showFooter: false,
+      address: 'BP 185 — Toliara 601, Madagascar',
+      contacts: 'scolarite@univ-toliara.mg · +261 34 00 000 00',
+      note: 'Document généré par le Portail Scolarité Uu',
+    },
+    body: {
+      template: '',
+    },
+    fields: STANDARD_FIELD_DEFINITIONS.map((field) => ({ ...field })),
     blocks: {
       header: true,
       reference: true,
@@ -930,6 +1316,13 @@ function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
     },
     rows: DOC_TEMPLATE_ROWS.map((row) => ({ ...row, enabled: true })),
     qr: {
+      enabled: true,
+      preset: 'medium',
+      mode: 'structured',
+      urlTemplate: 'https://scolarite.univ-toliara.mg/verifier?code={{token}}',
+      position: 'bottom-left',
+      label: "Scanner pour vérifier l'authenticité",
+      showLabel: true,
       size: 96,
       includeName: true,
       includeInstitution: true,
@@ -948,6 +1341,14 @@ function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
       fontFamily: 'display',
       fontSize: 14,
     },
+    print: {
+      perSheet: 1,
+      orientation: 'portrait',
+      twoUpLayout: 'side-by-side',
+      duplicateSame: true,
+      cutLine: true,
+      marginMm: 12,
+    },
     card: {
       showPhoto: true,
       photoHint: 'Photo non fournie',
@@ -963,7 +1364,20 @@ function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
 }
 
 export const DEFAULT_DOCUMENT_TEMPLATES: DocumentTemplates = {
-  certificat: baseDocumentTemplate('certificat'),
+  certificat: {
+    ...baseDocumentTemplate('certificat'),
+    body: {
+      template:
+        '{{civilite}} {{nom}} {{prenom}}, né(e) le {{date_naissance}} à {{lieu_naissance}},\n' +
+        'est inscrit(e) régulièrement au sein de l’Université de Toliara pour l’année universitaire\n' +
+        '{{annee_scolaire}}, en classe de {{classe}}, mention {{mention}}.\n\n' +
+        'Numéro de certificat : {{numero_certificat}} — délivré le {{date_delivrance}}.',
+    },
+    qr: {
+      ...baseDocumentTemplate('certificat').qr,
+      enabled: true,
+    },
+  },
   carte: {
     ...baseDocumentTemplate('carte'),
     texts: {
@@ -978,6 +1392,8 @@ export const DEFAULT_DOCUMENT_TEMPLATES: DocumentTemplates = {
       name: '',
       place: 'Toliara',
       showDate: false,
+      imageUrl: '',
+      showImage: false,
     },
     blocks: {
       ...baseDocumentTemplate('carte').blocks,
@@ -1033,10 +1449,26 @@ export function mergeDocumentTemplate(
     }
     return next;
   };
-  return mergeObject(
+  const merged = mergeObject(
     base as unknown as Record<string, unknown>,
     stored
   ) as unknown as DocumentTemplate;
+
+  // Les champs standard sont fusionnés par identifiant : un nouveau champ
+  // standard apparaît même si le modèle enregistré ne le connaissait pas.
+  if (Array.isArray(stored.fields)) {
+    const storedById = new Map(stored.fields.map((field) => [field.id, field]));
+    const baseIds = new Set(base.fields.map((field) => field.id));
+    const standard = base.fields.map((field) => ({
+      ...field,
+      ...(storedById.get(field.id) ?? {}),
+    }));
+    const customs = stored.fields.filter(
+      (field) => field.custom && !baseIds.has(field.id)
+    );
+    merged.fields = [...standard, ...customs];
+  }
+  return merged;
 }
 
 export function loadDocumentTemplates(): DocumentTemplates {
@@ -1115,11 +1547,28 @@ export function getDocumentRowValue(
 }
 
 /** Étudiant fictif utilisé pour l'aperçu des modèles dans l'administration. */
+/**
+ * Complète un enregistrement d'exemple avec l'identité du certificat
+ * (numéro, date, jeton) afin que l'aperçu de l'administration soit réaliste.
+ */
+function withDisplayIdentity(record: EnrichedInscription): EnrichedInscription {
+  const numero =
+    record.numeroCertificat ||
+    formatCertificateNumber(record.annee, record.numInscription, record.idInscription);
+  return {
+    ...record,
+    numeroCertificat: numero,
+    dateDelivrance: record.dateDelivrance || new Date().toISOString().slice(0, 10),
+    certificateToken:
+      record.certificateToken || `APERCU${String(record.idInscription).padStart(6, '0')}`,
+  };
+}
+
 export function getSampleInscription(db: ScolariteDatabase): EnrichedInscription {
   const rows = enrichInscriptions(db);
   const sample = rows[0];
-  if (sample) return { ...sample, photo: sample.photo || '' };
-  return {
+  if (sample) return withDisplayIdentity({ ...sample, photo: sample.photo || '' });
+  return withDisplayIdentity({
     idInscription: 0,
     idEtudiant: 0,
     idAnnee: 0,
@@ -1152,7 +1601,11 @@ export function getSampleInscription(db: ScolariteDatabase): EnrichedInscription
     parcours: '— Aucun —',
     annee: '2024-2025',
     photo: '',
-  };
+    customValues: {},
+    numeroCertificat: 'CERT/2024-2025/000000-000000',
+    dateDelivrance: '2026-11-27',
+    certificateToken: 'EXEMPLE000000000',
+  });
 }
 
 export function normalizeAllSexCodes(db: ScolariteDatabase): {
@@ -1958,6 +2411,31 @@ export function verifyCertificateQuery(
   if (!trimmed) return [];
 
   const all = enrichInscriptions(db);
+
+  // Jeton unique de vérification (QR Code) ou numéro de certificat
+  const tokenCandidate = trimmed
+    .replace(/\s+/g, '')
+    .replace(/^.*[?&]code=/i, '')
+    .toUpperCase();
+  if (/^[A-Z0-9]{8,20}$/.test(tokenCandidate)) {
+    const byToken = all.filter(
+      (r) => r.certificateToken && r.certificateToken.toUpperCase() === tokenCandidate
+    );
+    if (byToken.length > 0) return byToken;
+    const registryEntry = findCertificateByToken(tokenCandidate);
+    if (registryEntry) {
+      const byRegistry = all.filter(
+        (r) => r.idInscription === registryEntry.idInscription
+      );
+      if (byRegistry.length > 0) return byRegistry;
+    }
+  }
+  if (/^CERT\//i.test(trimmed)) {
+    const byNumber = all.filter(
+      (r) => r.numeroCertificat.toUpperCase() === trimmed.toUpperCase()
+    );
+    if (byNumber.length > 0) return byNumber;
+  }
 
   // Check if user pasted a multi-line QR payload
   const refMatch = trimmed.match(/R[ée]f[ée]rence\s*:\s*([^\n\r]+)/i);

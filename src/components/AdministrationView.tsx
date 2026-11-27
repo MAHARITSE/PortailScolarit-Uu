@@ -29,6 +29,8 @@ import {
   ScolariteDatabase,
 } from '../types/scolarite';
 import { CertificateDocument } from './CertificateDocument';
+import { CertificatePrintSheets } from './CertificatePrintSheets';
+import { CertificateTemplateEditor } from './CertificateTemplateEditor';
 import { StudentCardDocument } from './StudentCardDocument';
 
 interface AdministrationViewProps {
@@ -217,6 +219,7 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
   const [zoom, setZoom] = useState(0.85);
   const [savedAt, setSavedAt] = useState<string>('');
   const [showBack, setShowBack] = useState(true);
+  const [showPrintSheets, setShowPrintSheets] = useState(false);
   const [importMessage, setImportMessage] = useState<string>('');
   const [printTargets, setPrintTargets] = useState<DocumentKind | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -394,7 +397,7 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
               {
                 key: 'certificat' as DocumentKind,
                 label: 'Certificat de scolarité',
-                hint: 'A4 portrait',
+                hint: 'A4 · 1 ou 2 par feuille',
                 icon: FileBadge,
               },
               {
@@ -435,6 +438,16 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)] gap-5 items-start">
           {/* Panneau de réglages */}
           <div className="space-y-4">
+            {kind === 'certificat' && (
+              <CertificateTemplateEditor
+                db={db}
+                template={template}
+                patch={patch}
+                patchSection={patchSection}
+              />
+            )}
+
+            {kind === 'carte' && (
             <Section
               title="En-tête & logos"
               description="Lignes institutionnelles affichées en haut du document"
@@ -491,29 +504,27 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 onChange={(v) => patchSection('header', { line5: v })}
               />
             </Section>
+            )}
 
+            {kind === 'carte' && (
             <Section title="Textes du document">
               <TextField
                 label="Titre"
                 value={template.texts.title}
                 onChange={(v) => patchSection('texts', { title: v })}
               />
-              {kind === 'certificat' && (
-                <>
-                  <TextAreaField
-                    label="Phrase d’introduction"
-                    value={template.texts.intro}
-                    onChange={(v) => patchSection('texts', { intro: v })}
-                    rows={2}
-                  />
-                  <TextAreaField
-                    label="Formule de clôture"
-                    value={template.texts.closing}
-                    onChange={(v) => patchSection('texts', { closing: v })}
-                    rows={2}
-                  />
-                </>
-              )}
+              <TextAreaField
+                label="Phrase d’introduction"
+                value={template.texts.intro}
+                onChange={(v) => patchSection('texts', { intro: v })}
+                rows={2}
+              />
+              <TextAreaField
+                label="Formule de clôture"
+                value={template.texts.closing}
+                onChange={(v) => patchSection('texts', { closing: v })}
+                rows={2}
+              />
               <TextAreaField
                 label="Mention légale"
                 value={template.texts.legalMention}
@@ -521,6 +532,7 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 rows={2}
               />
             </Section>
+            )}
 
             <Section
               title="Blocs affichés"
@@ -568,6 +580,7 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
               )}
             </Section>
 
+            {kind === 'carte' && (
             <Section
               title="Champs & tableau"
               description="Lignes affichées (tableau du certificat, verso de la carte)"
@@ -600,7 +613,9 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 </div>
               ))}
             </Section>
+            )}
 
+            {kind === 'carte' && (
             <Section title="QR code de vérification">
               <label className="block">
                 <span className="block text-[11px] font-medium text-slate-600 mb-1">
@@ -643,7 +658,9 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 {qrPreview}
               </pre>
             </Section>
+            )}
 
+            {kind === 'carte' && (
             <Section title="Signature">
               <TextField
                 label="Fonction du signataire"
@@ -672,6 +689,7 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 restent prioritaires si elles sont remplies.
               </p>
             </Section>
+            )}
 
             <Section title="Apparence">
               <div className="grid grid-cols-2 gap-2">
@@ -820,6 +838,20 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {kind === 'certificat' && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPrintSheets((v) => !v)}
+                      className={`px-2.5 py-1.5 text-[11px] font-medium rounded border inline-flex items-center gap-1 ${
+                        showPrintSheets
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Printer className="w-3 h-3" />
+                      {showPrintSheets ? 'Voir le certificat' : 'Feuille A4'}
+                    </button>
+                  )}
                   {kind === 'carte' && (
                     <Toggle
                       label="Verso"
@@ -855,11 +887,19 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
 
               <div className="p-4 bg-slate-100/70 overflow-auto max-h-[70vh]">
                 <div
-                  style={{ zoom }}
+                  style={{ zoom: showPrintSheets && kind === 'certificat' ? zoom * 0.45 : zoom }}
                   className="mx-auto w-fit"
                 >
                   {kind === 'certificat' ? (
-                    <CertificateDocument record={sample} template={template} />
+                    showPrintSheets ? (
+                      <CertificatePrintSheets records={[sample]} template={template} />
+                    ) : (
+                      <CertificateDocument
+                        record={sample}
+                        template={template}
+                        token={sample.certificateToken}
+                      />
+                    )
                   ) : (
                     <StudentCardDocument
                       record={sample}
@@ -884,7 +924,10 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
       {/* Impression plein format */}
       {printTargets === 'certificat' && (
         <div className="hidden print:block">
-          <CertificateDocument record={sample} template={templates.certificat} />
+          <CertificatePrintSheets
+            records={[sample]}
+            template={templates.certificat}
+          />
         </div>
       )}
       {printTargets === 'carte' && (
