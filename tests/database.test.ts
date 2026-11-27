@@ -406,6 +406,30 @@ describe('Impression des cartes & choix de la fiche à conserver', () => {
   });
 });
 
+
+describe('Typographie du corps du certificat', () => {
+  it('fournit un style par défaut', () => {
+    const style = DEFAULT_DOCUMENT_TEMPLATES.certificat.body.style;
+    assert.equal(style.fontFamily, 'sans');
+    assert.equal(style.fontSize, 0);
+    assert.equal(style.align, 'justify');
+    assert.equal(style.bold, false);
+    assert.equal(style.lineHeight, 1.5);
+  });
+
+  it('fusionne partiellement le style enregistré', () => {
+    const merged = mergeDocumentTemplate('certificat', {
+      body: { style: { fontFamily: 'serif', bold: true, align: 'center' } },
+    } as never);
+    assert.equal(merged.body.style.fontFamily, 'serif');
+    assert.equal(merged.body.style.bold, true);
+    assert.equal(merged.body.style.align, 'center');
+    // Les clés non fournies gardent la valeur par défaut
+    assert.equal(merged.body.style.lineHeight, 1.5);
+    assert.equal(merged.body.template, DEFAULT_CERTIFICATE_PHRASE);
+  });
+});
+
 describe('Rapport d’audit exportable', () => {
   it('produit un CSV complet (BOM UTF-8, séparateur « ; », une ligne par anomalie)', () => {
     const db = getSeedDatabase();

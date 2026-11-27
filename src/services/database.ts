@@ -1323,6 +1323,16 @@ function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
     body: {
       template: '',
       mode: 'phrase',
+      style: {
+        fontFamily: 'sans',
+        fontSize: 0,
+        bold: false,
+        italic: false,
+        underline: false,
+        align: 'justify',
+        uppercase: false,
+        lineHeight: 1.5,
+      },
     },
     fields: STANDARD_FIELD_DEFINITIONS.map((field) => ({ ...field })),
     blocks: {
@@ -1393,6 +1403,9 @@ export const DEFAULT_DOCUMENT_TEMPLATES: DocumentTemplates = {
     body: {
       template: DEFAULT_CERTIFICATE_PHRASE,
       mode: 'phrase',
+      style: {
+        ...baseDocumentTemplate('certificat').body.style,
+      },
     },
     qr: {
       ...baseDocumentTemplate('certificat').qr,

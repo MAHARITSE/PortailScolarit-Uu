@@ -11,6 +11,7 @@ import {
   renderCertificateBody,
 } from '../services/database';
 import {
+  BodyFontFamily,
   CertificateSettings,
   DocumentTemplate,
   EnrichedInscription,
@@ -30,6 +31,13 @@ interface CertificateDocumentProps {
   /** Jeton forcé (certificat en cours d'émission) */
   token?: string;
 }
+
+const BODY_FONT_CLASS: Record<BodyFontFamily, string> = {
+  sans: 'font-sans',
+  serif: 'font-serif',
+  display: 'font-display',
+  mono: 'font-mono',
+};
 
 const FONT_CLASS: Record<DocumentTemplate['appearance']['fontFamily'], string> = {
   sans: 'font-sans',
@@ -79,6 +87,17 @@ export function CertificateDocument({
   // Mode « phrase rédigée » (par défaut) : le certificat est un texte suivi,
   // complété automatiquement avec les données — aucun tableau.
   const phraseMode = (tpl.body.mode ?? 'phrase') !== 'table';
+  const bodyStyle = tpl.body.style ?? DEFAULT_DOCUMENT_TEMPLATES.certificat.body.style;
+  const bodyInlineStyle = {
+    fontFamily: undefined,
+    fontSize: bodyStyle.fontSize ? `${bodyStyle.fontSize * scale}px` : '0.98em',
+    fontWeight: bodyStyle.bold ? 700 : undefined,
+    fontStyle: bodyStyle.italic ? 'italic' : undefined,
+    textDecoration: bodyStyle.underline ? 'underline' : undefined,
+    textTransform: bodyStyle.uppercase ? ('uppercase' as const) : undefined,
+    textAlign: bodyStyle.align,
+    lineHeight: bodyStyle.lineHeight || 1.5,
+  };
   const renderedBody = renderCertificateBody(tpl.body.template, variables);
   const bodyText = (
     renderedBody.trim() ||
@@ -262,7 +281,12 @@ export function CertificateDocument({
           <>
             {!phraseMode && texts.intro && <p>{texts.intro}</p>}
             {bodyParagraphs.length > 0 && (
-              <div className="space-y-3 text-[0.98em] text-justify">
+              <div
+                className={`space-y-3 ${
+                  BODY_FONT_CLASS[bodyStyle.fontFamily] ?? 'font-sans'
+                }`}
+                style={bodyInlineStyle}
+              >
                 {bodyParagraphs.map((paragraph, index) => (
                   <p key={`para-${index}`} className="whitespace-pre-line">
                     {paragraph}

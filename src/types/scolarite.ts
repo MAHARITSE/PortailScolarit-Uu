@@ -228,6 +228,25 @@ export type CertificateBodyMode = 'phrase' | 'table';
 
 /** Impression de la carte étudiant : pliage recto/verso ou deux pages. */
 export type CardPrintMode = 'fold' | 'side';
+
+/* --------------------------- Typographie du corps --------------------------- */
+
+export type BodyFontFamily = 'sans' | 'serif' | 'display' | 'mono';
+export type BodyTextAlign = 'left' | 'center' | 'justify';
+
+export interface BodyTypography {
+  fontFamily: BodyFontFamily;
+  /** Taille en px (0 = taille héritée du document) */
+  fontSize: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  align: BodyTextAlign;
+  /** Casse forcée en majuscules */
+  uppercase: boolean;
+  /** Interligne (1 = normal) */
+  lineHeight: number;
+}
 export type FieldDateFormat = 'JJ/MM/AAAA' | 'AAAA-MM-JJ';
 
 export interface FieldDefinition {
@@ -346,6 +365,8 @@ export interface DocumentTemplate {
      * tableau de données) · `table` : champs présentés en tableau.
      */
     mode: CertificateBodyMode;
+    /** Police et caractère du texte rédigé */
+    style: BodyTypography;
   };
   /** Champs affichés sur le certificat / saisis dans le formulaire */
   fields: FieldDefinition[];

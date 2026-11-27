@@ -1,12 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
 import {
-  ArrowDown,
-  ArrowUp,
   ChevronDown,
   ChevronUp,
   Image as ImageIcon,
   PenLine,
-  Plus,
   QrCode,
   RotateCcw,
   Trash2,
@@ -17,6 +14,7 @@ import {
 import {
   CERTIFICATE_VARIABLES,
   DEFAULT_CERTIFICATE_PHRASE,
+  DEFAULT_DOCUMENT_TEMPLATES,
   QR_PIXEL_SIZES,
   buildCertificateVariables,
   buildCertificateQrPayload,
@@ -26,10 +24,10 @@ import {
   renderCertificateBody,
 } from '../services/database';
 import {
+  BodyFontFamily,
+  BodyTextAlign,
   CertificateTokenEntry,
   DocumentTemplate,
-  FieldDefinition,
-  FieldInputType,
   QrContentMode,
   QrPosition,
   QrSize,
@@ -130,12 +128,11 @@ function Switch({
   );
 }
 
-const INPUT_TYPE_LABELS: Record<FieldInputType, string> = {
-  text: 'Texte court',
-  textarea: 'Texte long',
-  date: 'Date',
-  number: 'Nombre',
-  select: 'Liste déroulante',
+const BODY_FONT_CLASS: Record<BodyFontFamily, string> = {
+  sans: 'font-sans',
+  serif: 'font-serif',
+  display: 'font-display',
+  mono: 'font-mono',
 };
 
 const QR_MODES: { value: QrContentMode; label: string }[] = [
@@ -180,15 +177,14 @@ export function CertificateTemplateEditor({
   const signatureInputRef = useRef<HTMLInputElement | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [newFieldLabel, setNewFieldLabel] = useState('');
-  const [newFieldType, setNewFieldType] = useState<FieldInputType>('text');
-  const [newFieldOptions, setNewFieldOptions] = useState('');
   const [fieldError, setFieldError] = useState('');
-  const [expandedField, setExpandedField] = useState<string | null>(null);
 
   const [registry, setRegistry] = useState<CertificateTokenEntry[]>(() =>
     loadCertificateRegistry()
   );
+
+  const bodyStyle =
+    template.body.style ?? DEFAULT_DOCUMENT_TEMPLATES.certificat.body.style;
 
   const sample = useMemo(() => getSampleInscription(db), [db]);
   const qrPayload = useMemo(
@@ -205,71 +201,6 @@ export function CertificateTemplateEditor({
     ],
     [template.fields]
   );
-
-  const setFields = (fields: FieldDefinition[]) => patch({ fields });
-
-  const updateField = (id: string, partial: Partial<FieldDefinition>) =>
-    setFields(template.fields.map((f) => (f.id === id ? { ...f, ...partial } : f)));
-
-  const moveField = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (target < 0 || target >= template.fields.length) return;
-    const fields = [...template.fields];
-    [fields[index], fields[target]] = [fields[target], fields[index]];
-    setFields(fields);
-  };
-
-  const slugify = (value: string) =>
-    value
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '') || 'champ';
-
-  const addCustomField = () => {
-    const label = newFieldLabel.trim();
-    if (!label) {
-      setFieldError('Renseignez un libellé pour le champ personnalisé.');
-      return;
-    }
-    let id = slugify(label);
-    let suffix = 2;
-    while (template.fields.some((f) => f.id === id)) {
-      id = `${slugify(label)}_${suffix++}`;
-    }
-    const field: FieldDefinition = {
-      id,
-      label,
-      type: newFieldType,
-      enabled: true,
-      required: false,
-      custom: true,
-      uppercase: false,
-      dateFormat: 'JJ/MM/AAAA',
-      mask: '',
-      options:
-        newFieldType === 'select'
-          ? newFieldOptions
-              .split(',')
-              .map((o) => o.trim())
-              .filter(Boolean)
-          : [],
-      help: '',
-      fullWidth: newFieldType === 'textarea',
-    };
-    setFields([...template.fields, field]);
-    setNewFieldLabel('');
-    setNewFieldOptions('');
-    setNewFieldType('text');
-    setFieldError('');
-    setExpandedField(id);
-  };
-
-  const removeField = (id: string) => {
-    setFields(template.fields.filter((f) => f.id !== id));
-    if (expandedField === id) setExpandedField(null);
-  };
 
   const insertVariable = (key: string) => {
     const token = `{{${key}}}`;
@@ -372,11 +303,139 @@ export function CertificateTemplateEditor({
           </button>
         </div>
 
+        <div className="p-3 border border-slate-200 rounded-md bg-slate-50/70 space-y-2.5">
+          <p className="text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1.5">
+            <Type className="w-3.5 h-3.5 text-blue-600" /> Police & caractère
+          </p>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Police">
+              <select
+                value={bodyStyle.fontFamily}
+                onChange={(e) =>
+                  patchSection('body', {
+                    style: {
+                      ...bodyStyle,
+                      fontFamily: e.target.value as BodyFontFamily,
+                    },
+                  })
+                }
+                className={inputClass}
+              >
+                <option value="sans">Sans serif</option>
+                <option value="serif">Serif</option>
+                <option value="display">Display (titres)</option>
+                <option value="mono">Monospace</option>
+              </select>
+            </Field>
+            <Field label="Taille du texte (px)">
+              <input
+                type="number"
+                min={0}
+                max={32}
+                value={bodyStyle.fontSize}
+                onChange={(e) =>
+                  patchSection('body', {
+                    style: {
+                      ...bodyStyle,
+                      fontSize: Math.max(0, Math.min(32, Number(e.target.value) || 0)),
+                    },
+                  })
+                }
+                placeholder="Auto"
+                className={`${inputClass} font-mono`}
+              />
+            </Field>
+            <Field label="Alignement">
+              <select
+                value={bodyStyle.align}
+                onChange={(e) =>
+                  patchSection('body', {
+                    style: {
+                      ...bodyStyle,
+                      align: e.target.value as BodyTextAlign,
+                    },
+                  })
+                }
+                className={inputClass}
+              >
+                <option value="justify">Justifié</option>
+                <option value="left">Gauche</option>
+                <option value="center">Centré</option>
+              </select>
+            </Field>
+            <Field label="Interligne">
+              <select
+                value={String(bodyStyle.lineHeight)}
+                onChange={(e) =>
+                  patchSection('body', {
+                    style: { ...bodyStyle, lineHeight: Number(e.target.value) },
+                  })
+                }
+                className={inputClass}
+              >
+                <option value="1.2">Serré (1,2)</option>
+                <option value="1.5">Normal (1,5)</option>
+                <option value="1.8">Aéré (1,8)</option>
+                <option value="2">Double (2)</option>
+              </select>
+            </Field>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                ['bold', 'Gras', 'font-bold'],
+                ['italic', 'Italique', 'italic'],
+                ['underline', 'Souligné', 'underline'],
+                ['uppercase', 'MAJUSCULES', 'uppercase'],
+              ] as const
+            ).map(([key, label, className]) => {
+              const active = Boolean(bodyStyle[key]);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() =>
+                    patchSection('body', {
+                      style: { ...bodyStyle, [key]: !active },
+                    })
+                  }
+                  className={`px-2.5 py-1 text-[11px] rounded border ${className} ${
+                    active
+                      ? 'bg-blue-600 border-blue-600 text-white'
+                      : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            <span className="text-[10.5px] text-slate-500 ml-auto">
+              Taille 0 = héritée du document
+            </span>
+          </div>
+        </div>
+
         <div>
           <p className="text-[11px] font-medium text-slate-600 mb-1">
             Rendu pour {sample.nom} {sample.prenom}
           </p>
-          <div className="border border-slate-200 rounded bg-slate-50 p-3 text-[11.5px] leading-relaxed text-justify text-slate-800 space-y-2">
+          <div
+            className={`border border-slate-200 rounded bg-slate-50 p-3 text-slate-800 space-y-2 ${
+              BODY_FONT_CLASS[bodyStyle.fontFamily] ?? 'font-sans'
+            }`}
+            style={{
+              fontSize: bodyStyle.fontSize ? `${bodyStyle.fontSize}px` : '11.5px',
+              fontWeight: bodyStyle.bold ? 700 : undefined,
+              fontStyle: bodyStyle.italic ? 'italic' : undefined,
+              textDecoration: bodyStyle.underline ? 'underline' : undefined,
+              textTransform: bodyStyle.uppercase ? 'uppercase' : undefined,
+              textAlign: bodyStyle.align,
+              lineHeight: bodyStyle.lineHeight || 1.5,
+            }}
+          >
             {renderCertificateBody(
               template.body.template.trim() || DEFAULT_CERTIFICATE_PHRASE,
               buildCertificateVariables(sample, template)
@@ -391,234 +450,7 @@ export function CertificateTemplateEditor({
         </div>
       </EditorSection>
 
-      {/* 2 · Champs du formulaire ------------------------------------------- */}
-      <EditorSection
-        title="Champs du formulaire de saisie"
-        description="Activez, renommez et ordonnez les champs · ajoutez des champs personnalisés"
-        icon={<Type className="w-4 h-4" />}
-      >
-        <div className="space-y-2">
-          {template.fields.map((field, index) => {
-            const expanded = expandedField === field.id;
-            return (
-              <div
-                key={field.id}
-                className={`border rounded-md ${
-                  field.enabled ? 'border-slate-200 bg-white' : 'border-slate-200 bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 px-2 py-1.5">
-                  <div className="flex flex-col">
-                    <button
-                      type="button"
-                      onClick={() => moveField(index, -1)}
-                      disabled={index === 0}
-                      aria-label={`Monter ${field.label}`}
-                      className="p-0.5 text-slate-400 hover:text-blue-600 disabled:opacity-30"
-                    >
-                      <ArrowUp className="w-3 h-3" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveField(index, 1)}
-                      disabled={index === template.fields.length - 1}
-                      aria-label={`Descendre ${field.label}`}
-                      className="p-0.5 text-slate-400 hover:text-blue-600 disabled:opacity-30"
-                    >
-                      <ArrowDown className="w-3 h-3" />
-                    </button>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={field.enabled}
-                    aria-label={`Activer ${field.label}`}
-                    onChange={(e) => updateField(field.id, { enabled: e.target.checked })}
-                    className="rounded border-slate-300 text-blue-600 shrink-0"
-                  />
-                  <input
-                    type="text"
-                    value={field.label}
-                    aria-label="Libellé du champ"
-                    onChange={(e) => updateField(field.id, { label: e.target.value })}
-                    className="flex-1 min-w-0 px-2 py-1 text-xs border border-slate-200 rounded bg-white"
-                  />
-                  <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ${
-                      field.custom
-                        ? 'bg-violet-50 text-violet-700 border border-violet-200'
-                        : 'bg-slate-100 text-slate-500'
-                    }`}
-                  >
-                    {field.custom ? `{{${field.id}}}` : field.id}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setExpandedField(expanded ? null : field.id)}
-                    className="p-1 text-slate-400 hover:text-blue-600 shrink-0"
-                    aria-label={`Options de ${field.label}`}
-                  >
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`}
-                    />
-                  </button>
-                  {field.custom && (
-                    <button
-                      type="button"
-                      onClick={() => removeField(field.id)}
-                      className="p-1 text-slate-400 hover:text-red-600 shrink-0"
-                      aria-label={`Supprimer ${field.label}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                {expanded && (
-                  <div className="px-3 pb-3 pt-1 border-t border-slate-100 space-y-2.5">
-                    <div className="grid grid-cols-2 gap-2">
-                      <Field label="Type de saisie">
-                        <select
-                          value={field.type}
-                          onChange={(e) =>
-                            updateField(field.id, {
-                              type: e.target.value as FieldInputType,
-                            })
-                          }
-                          className={inputClass}
-                        >
-                          {(Object.keys(INPUT_TYPE_LABELS) as FieldInputType[]).map((key) => (
-                            <option key={key} value={key}>
-                              {INPUT_TYPE_LABELS[key]}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Affichage de la date">
-                        <select
-                          value={field.dateFormat}
-                          onChange={(e) =>
-                            updateField(field.id, {
-                              dateFormat: e.target.value === 'AAAA-MM-JJ' ? 'AAAA-MM-JJ' : 'JJ/MM/AAAA',
-                            })
-                          }
-                          disabled={field.type !== 'date'}
-                          className={`${inputClass} disabled:opacity-50`}
-                        >
-                          <option value="JJ/MM/AAAA">JJ/MM/AAAA</option>
-                          <option value="AAAA-MM-JJ">AAAA-MM-JJ</option>
-                        </select>
-                      </Field>
-                      <Field label="Masque de saisie (9 = chiffre)">
-                        <input
-                          type="text"
-                          value={field.mask}
-                          placeholder="Ex : 999 999 999 999"
-                          onChange={(e) => updateField(field.id, { mask: e.target.value })}
-                          className={`${inputClass} font-mono`}
-                        />
-                      </Field>
-                      <Field label="Aide affichée dans le formulaire">
-                        <input
-                          type="text"
-                          value={field.help}
-                          onChange={(e) => updateField(field.id, { help: e.target.value })}
-                          className={inputClass}
-                        />
-                      </Field>
-                    </div>
-                    {field.type === 'select' && (
-                      <Field label="Options (séparées par des virgules)">
-                        <input
-                          type="text"
-                          value={field.options.join(', ')}
-                          onChange={(e) =>
-                            updateField(field.id, {
-                              options: e.target.value
-                                .split(',')
-                                .map((o) => o.trim())
-                                .filter(Boolean),
-                            })
-                          }
-                          className={inputClass}
-                        />
-                      </Field>
-                    )}
-                    <div className="grid grid-cols-2 gap-x-3">
-                      <Switch
-                        label="Obligatoire"
-                        checked={field.required}
-                        onChange={(v) => updateField(field.id, { required: v })}
-                      />
-                      <Switch
-                        label="Majuscules"
-                        checked={field.uppercase}
-                        onChange={(v) => updateField(field.id, { uppercase: v })}
-                      />
-                      <Switch
-                        label="Pleine largeur"
-                        checked={field.fullWidth}
-                        onChange={(v) => updateField(field.id, { fullWidth: v })}
-                      />
-                      <Switch
-                        label="Affiché sur le certificat"
-                        checked={field.enabled}
-                        onChange={(v) => updateField(field.id, { enabled: v })}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-3 p-3 border border-dashed border-violet-300 bg-violet-50/50 rounded-md space-y-2">
-          <p className="text-[11px] font-semibold text-violet-900">
-            Ajouter un champ personnalisé
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="text"
-              value={newFieldLabel}
-              onChange={(e) => setNewFieldLabel(e.target.value)}
-              placeholder="Libellé (ex : Numéro de table)"
-              className={inputClass}
-            />
-            <select
-              value={newFieldType}
-              onChange={(e) => setNewFieldType(e.target.value as FieldInputType)}
-              className={inputClass}
-            >
-              {(Object.keys(INPUT_TYPE_LABELS) as FieldInputType[]).map((key) => (
-                <option key={key} value={key}>
-                  {INPUT_TYPE_LABELS[key]}
-                </option>
-              ))}
-            </select>
-          </div>
-          {newFieldType === 'select' && (
-            <input
-              type="text"
-              value={newFieldOptions}
-              onChange={(e) => setNewFieldOptions(e.target.value)}
-              placeholder="Options séparées par des virgules"
-              className={inputClass}
-            />
-          )}
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] text-red-700">{fieldError}</span>
-            <button
-              type="button"
-              onClick={addCustomField}
-              className="px-3 py-1.5 text-xs font-semibold text-white bg-violet-600 rounded-md hover:bg-violet-700 inline-flex items-center gap-1.5 shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5" /> Ajouter le champ
-            </button>
-          </div>
-        </div>
-      </EditorSection>
-
-      {/* 3 · Titres & mentions ---------------------------------------------- */}
+      {/* 2 · Titres & mentions ---------------------------------------------- */}
       <EditorSection
         title="Titres & mentions"
         description="Titre du document, intro, formule de clôture et mention légale"
@@ -642,7 +474,7 @@ export function CertificateTemplateEditor({
         </Field>
       </EditorSection>
 
-      {/* 4 · En-tête & pied de page ----------------------------------------- */}
+      {/* 3 · En-tête & pied de page ----------------------------------------- */}
       <EditorSection
         title="En-tête & pied de page"
         description="Établissement, devise, logo, adresse et coordonnées"
@@ -772,7 +604,7 @@ export function CertificateTemplateEditor({
         </div>
       </EditorSection>
 
-      {/* 5 · Signature -------------------------------------------------------- */}
+      {/* 4 · Signature -------------------------------------------------------- */}
       <EditorSection
         title="Signature & cachet"
         description="Lieu, qualité du signataire et image de signature"
@@ -863,7 +695,7 @@ export function CertificateTemplateEditor({
         </Field>
       </EditorSection>
 
-      {/* 6 · QR code ---------------------------------------------------------- */}
+      {/* 5 · QR code ---------------------------------------------------------- */}
       <EditorSection
         title="QR code de vérification"
         description="Contenu, position, taille et jeton unique par certificat"
@@ -977,7 +809,7 @@ export function CertificateTemplateEditor({
         </div>
       </EditorSection>
 
-      {/* 7 · Impression ------------------------------------------------------- */}
+      {/* 6 · Impression ------------------------------------------------------- */}
       <EditorSection
         title="Mise en page d’impression"
         description="1 ou 2 certificats par feuille A4, marges et ligne de découpe"
@@ -1060,7 +892,7 @@ export function CertificateTemplateEditor({
         </p>
       </EditorSection>
 
-      {/* 8 · Historique ------------------------------------------------------- */}
+      {/* 7 · Historique ------------------------------------------------------- */}
       <EditorSection
         title={`Certificats émis (${registry.length})`}
         description="Jetons et numéros enregistrés dans ce navigateur"
