@@ -1,0 +1,179 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<HTML>
+<BODY>
+<UL>
+<li><object type="text/sitemap">
+<param name="Name" value="PortailScolaritéUu">
+</object>
+<ul>
+<li><object type="text/sitemap">
+<param name="Name" value="Description des fenêtres">
+</object>
+<ul>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_MENU">
+<param name="Local" value="Fenêtre_FEN_MENU.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Fiche_ANNEE_UNIVERSITAIRE">
+<param name="Local" value="Fenêtre_FEN_Fiche_ANNEE_UNIVERSITAIRE.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Fiche_ETUDIANT">
+<param name="Local" value="Fenêtre_FEN_Fiche_ETUDIANT.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Fiche_FACULTE">
+<param name="Local" value="Fenêtre_FEN_Fiche_FACULTE.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Fiche_INSCRIPTION">
+<param name="Local" value="Fenêtre_FEN_Fiche_INSCRIPTION.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Fiche_MENTION">
+<param name="Local" value="Fenêtre_FEN_Fiche_MENTION.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Fiche_NIVEAU">
+<param name="Local" value="Fenêtre_FEN_Fiche_NIVEAU.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Fiche_PARCOURS">
+<param name="Local" value="Fenêtre_FEN_Fiche_PARCOURS.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Table_ANNEE_UNIVERSITAIRE">
+<param name="Local" value="Fenêtre_FEN_Table_ANNEE_UNIVERSITAIRE.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Table_ETUDIANT">
+<param name="Local" value="Fenêtre_FEN_Table_ETUDIANT.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Table_FACULTE">
+<param name="Local" value="Fenêtre_FEN_Table_FACULTE.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Table_INSCRIPTION">
+<param name="Local" value="Fenêtre_FEN_Table_INSCRIPTION.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Table_MENTION">
+<param name="Local" value="Fenêtre_FEN_Table_MENTION.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Table_NIVEAU">
+<param name="Local" value="Fenêtre_FEN_Table_NIVEAU.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Table_PARCOURS">
+<param name="Local" value="Fenêtre_FEN_Table_PARCOURS.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Vision_ANNEE_UNIVERSITAIRE">
+<param name="Local" value="Fenêtre_FEN_Vision_ANNEE_UNIVERSITAIRE.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Vision_ETUDIANT">
+<param name="Local" value="Fenêtre_FEN_Vision_ETUDIANT.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Vision_FACULTE">
+<param name="Local" value="Fenêtre_FEN_Vision_FACULTE.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Vision_INSCRIPTION">
+<param name="Local" value="Fenêtre_FEN_Vision_INSCRIPTION.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Vision_MENTION">
+<param name="Local" value="Fenêtre_FEN_Vision_MENTION.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Vision_NIVEAU">
+<param name="Local" value="Fenêtre_FEN_Vision_NIVEAU.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Fenêtre FEN_Vision_PARCOURS">
+<param name="Local" value="Fenêtre_FEN_Vision_PARCOURS.htm">
+</object>
+</ul>
+<li><object type="text/sitemap">
+<param name="Name" value="Description des états">
+</object>
+<ul>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Details_ANNEE_UNIVERSITAIRE">
+<param name="Local" value="Etat_ETAT_Details_ANNEE_UNIVERSITAIRE.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Details_ETUDIANT">
+<param name="Local" value="Etat_ETAT_Details_ETUDIANT.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Details_FACULTE">
+<param name="Local" value="Etat_ETAT_Details_FACULTE.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Details_INSCRIPTION">
+<param name="Local" value="Etat_ETAT_Details_INSCRIPTION.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Details_MENTION">
+<param name="Local" value="Etat_ETAT_Details_MENTION.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Details_NIVEAU">
+<param name="Local" value="Etat_ETAT_Details_NIVEAU.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Details_PARCOURS">
+<param name="Local" value="Etat_ETAT_Details_PARCOURS.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Liste_ANNEE_UNIVERSITAIRE">
+<param name="Local" value="Etat_ETAT_Liste_ANNEE_UNIVERSITAIRE.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Liste_ETUDIANT">
+<param name="Local" value="Etat_ETAT_Liste_ETUDIANT.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Liste_FACULTE">
+<param name="Local" value="Etat_ETAT_Liste_FACULTE.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Liste_INSCRIPTION">
+<param name="Local" value="Etat_ETAT_Liste_INSCRIPTION.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Liste_MENTION">
+<param name="Local" value="Etat_ETAT_Liste_MENTION.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Liste_NIVEAU">
+<param name="Local" value="Etat_ETAT_Liste_NIVEAU.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Etat ETAT_Liste_PARCOURS">
+<param name="Local" value="Etat_ETAT_Liste_PARCOURS.htm">
+</object>
+</ul>
+<li><object type="text/sitemap">
+<param name="Name" value="Divers">
+</object>
+<ul>
+<li><object type="text/sitemap">
+<param name="Name" value="Utilisation du champ Table">
+<param name="Local" value="UtilisationTable.htm">
+</object>
+<li><object type="text/sitemap">
+<param name="Name" value="Aperçu avant impression">
+<param name="Local" value="VisualisationEtat.htm">
+</object>
+</ul>
+</ul>
+</UL>
+</BODY>
+</HTML>
