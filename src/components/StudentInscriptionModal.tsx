@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Check, Plus, RefreshCw, Search, UserPlus, X } from 'lucide-react';
 import {
+  enrichInscriptions,
   formatCertificateNumber,
   formatDateFR,
   generateCertificateToken,
@@ -10,6 +11,7 @@ import {
   normalizeCin,
   normalizePhone,
   normalizeSex,
+  syncCertificateRegistryForInscription,
 } from '../services/database';
 import {
   EnrichedInscription,
@@ -424,6 +426,12 @@ export function StudentInscriptionModal({
           reference: reference.trim(),
           ...issueIdentity(currentInsId),
         };
+        const updatedRecord = enrichInscriptions(next).find(
+          (r) => r.idInscription === currentInsId
+        );
+        if (updatedRecord) {
+          syncCertificateRegistryForInscription(updatedRecord);
+        }
       }
       onSave(next, `Fiche de ${nom.trim()} ${prenom.trim()} mise à jour.`);
       return;

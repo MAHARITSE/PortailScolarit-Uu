@@ -18,7 +18,9 @@ import {
   compareNiveauKeys,
   commitExcelImport,
   computeDashboardStats,
+  createYearWithPointedStudents,
   enrichInscriptions,
+  findNextNiveauId,
   formatCertificateNumber,
   formatDateFR,
   formatFieldValue,
@@ -26,6 +28,8 @@ import {
   getDependencyInfo,
   getDocumentRowValue,
   getLatestAnneeLabel,
+  getLatestBaseAnneeId,
+  getResolvedHeaderLines,
   getSampleInscription,
   getSeedDatabase,
   getWorkbookSheetNames,
@@ -42,6 +46,8 @@ import {
   parseDateToISO,
   parseExcelWorkbook,
   sortAnneesDesc,
+  suggestNextAnneeLabel,
+  syncHeaderLegacyFields,
   verifyCertificateQuery,
 } from '../src/services/database';
 
@@ -178,6 +184,139 @@ describe('Modèles de documents (administration)', () => {
     assert.ok(sample.numInscription.length > 0);
     assert.equal(sample.photo, '');
   });
+
+  it('gère un modèle malléable (ordre des zones, zones libres, champs carte et champs personnalisés)', () => {
+    const partialOrder = mergeDocumentTemplate('certificat', {
+      layout: {
+        sectionOrder: ['title', 'body'],
+        headerLayout: 'left',
+        freeZones: [
+          {
+            id: 'z1',
+            label: 'Visa',
+            text: 'Vu par {{signataire_titre}}',
+            position: 'bottom',
+            align: 'right',
+            enabled: true,
+          },
+        ],
+      },
+    } as never);
+
+    // L'ordre personnalisé commence bien par title puis body, tout en conservant les autres zones
+    assert.equal(partialOrder.layout.sectionOrder[0], 'title');
+    assert.equal(partialOrder.layout.sectionOrder[1], 'body');
+    assert.equal(partialOrder.layout.sectionOrder.length, 6);
+    assert.equal(partialOrder.layout.headerLayout, 'left');
+    assert.equal(partialOrder.layout.freeZones.length, 1);
+
+    const carte = mergeDocumentTemplate('carte', {
+      card: {
+        photoPosition: 'right',
+        photoShape: 'circle',
+        qrPlacement: 'back',
+        frontFields: ['numInscription', 'mention'],
+      },
+    } as never);
+    assert.equal(carte.card.photoPosition, 'right');
+    assert.equal(carte.card.photoShape, 'circle');
+    assert.equal(carte.card.qrPlacement, 'back');
+    assert.deepEqual(carte.card.frontFields, ['numInscription', 'mention']);
+
+    const db = getSeedDatabase();
+    const rec = { ...getSampleInscription(db), customValues: { bourse: 'OUI' } };
+    assert.equal(getDocumentRowValue(rec, 'bourse'), 'OUI');
+  });
+
+  it('gère les lignes d’en-tête dynamiques et la compatibilité avec line1..line5', () => {
+    const defaultLines = getResolvedHeaderLines(
+      DEFAULT_DOCUMENT_TEMPLATES.certificat.header
+    );
+    assert.equal(defaultLines.length, 5);
+    assert.equal(defaultLines[3].text, 'Université de Toliara');
+
+    // Migration d'un ancien modèle ne contenant que line1..line5
+    const legacyMerged = mergeDocumentTemplate('certificat', {
+      header: { line4: 'Institut Supérieur Test' },
+    } as never);
+    assert.equal(legacyMerged.header.lines?.length, 5);
+    assert.equal(legacyMerged.header.lines?.[3].text, 'Institut Supérieur Test');
+
+    // Ajout / personnalisation de lignes typographiques
+    const customLines = [
+      ...defaultLines,
+      {
+        id: 'h6',
+        label: 'Contact',
+        text: 'BP 185 · Toliara',
+        fontFamily: 'Georgia',
+        fontSize: 12,
+        bold: true,
+        italic: true,
+        underline: false,
+        align: 'right' as const,
+      },
+    ];
+    const syncedHeader = syncHeaderLegacyFields(
+      DEFAULT_DOCUMENT_TEMPLATES.certificat.header,
+      customLines
+    );
+    const mergedCustom = mergeDocumentTemplate('certificat', {
+      header: syncedHeader,
+    } as never);
+    assert.equal(mergedCustom.header.lines?.length, 6);
+    assert.equal(mergedCustom.header.lines?.[5].fontFamily, 'Georgia');
+    assert.equal(mergedCustom.header.lines?.[5].align, 'right');
+    assert.equal(mergedCustom.header.lines?.[5].bold, true);
+  });
+
+  it('conserve les styles typographiques par zone (elementStyles), les décalages X/Y et les polices des blocs libres', () => {
+    const merged = mergeDocumentTemplate('certificat', {
+      layout: {
+        elementStyles: {
+          title: { fontFamily: 'Georgia', fontSize: 22, italic: true, align: 'left' },
+          reference: { fontFamily: 'JetBrains Mono', fontSize: 10, uppercase: true },
+          signature: { align: 'left', offsetX: 48, offsetY: -24 },
+          qr: { offsetX: -16, offsetY: 12 },
+          footer: { fontFamily: 'Arial', fontSize: 9, align: 'center' },
+        },
+        freeZones: [
+          {
+            id: 'fz1',
+            label: 'Visa',
+            text: 'Visé par le secrétariat',
+            position: 'bottom',
+            align: 'right',
+            enabled: true,
+            fontFamily: 'Times New Roman',
+            fontSize: 11,
+            bold: true,
+            italic: true,
+            underline: true,
+            color: '#1e293b',
+            offsetX: 20,
+            offsetY: -10,
+          },
+        ],
+      },
+    } as never);
+
+    assert.equal(merged.layout.elementStyles?.title?.fontFamily, 'Georgia');
+    assert.equal(merged.layout.elementStyles?.title?.fontSize, 22);
+    assert.equal(merged.layout.elementStyles?.title?.italic, true);
+    assert.equal(merged.layout.elementStyles?.title?.align, 'left');
+    assert.equal(merged.layout.elementStyles?.reference?.uppercase, true);
+    assert.equal(merged.layout.elementStyles?.signature?.offsetX, 48);
+    assert.equal(merged.layout.elementStyles?.signature?.offsetY, -24);
+    assert.equal(merged.layout.elementStyles?.qr?.offsetX, -16);
+    assert.equal(merged.layout.elementStyles?.qr?.offsetY, 12);
+    assert.equal(merged.layout.elementStyles?.footer?.align, 'center');
+    assert.equal(merged.layout.freeZones[0].fontFamily, 'Times New Roman');
+    assert.equal(merged.layout.freeZones[0].underline, true);
+    assert.equal(merged.layout.freeZones[0].color, '#1e293b');
+    assert.equal(merged.layout.freeZones[0].offsetX, 20);
+    assert.equal(merged.layout.freeZones[0].offsetY, -10);
+  });
 });
 
 
@@ -293,9 +432,31 @@ describe('Personnalisation du certificat (champs, corps, QR, impression)', () =>
     assert.equal(twoUp.print.duplicateSame, false);
   });
 
-  it('retrouve un certificat par son numéro via la vérification QR', () => {
+  it('retrouve un certificat par son numéro (y compris personnalisé) ou jeton QR', () => {
     const found = verifyCertificateQuery(db, record.numeroCertificat);
     assert.ok(found);
+
+    const customDb = structuredClone(db);
+    customDb.inscriptions[0].numeroCertificat = 'ATT-2025-0042';
+    customDb.inscriptions[0].certificateToken = 'JETONPERSO99';
+    const byCustomNum = verifyCertificateQuery(customDb, 'ATT-2025-0042');
+    assert.equal(byCustomNum.length, 1);
+    assert.equal(byCustomNum[0].idInscription, customDb.inscriptions[0].id);
+
+    const byQrLines = verifyCertificateQuery(
+      customDb,
+      'N° certificat : ATT-2025-0042\nJeton : JETONPERSO99'
+    );
+    assert.equal(byQrLines.length, 1);
+  });
+
+  it('applique les surcharges de signataire dans les variables du corps', () => {
+    const vars = buildCertificateVariables(record, tpl, {
+      signataireTitre: 'Le Doyen de la Faculté',
+      signataireNom: 'Prof. TEST',
+    });
+    assert.equal(vars.signataire_titre, 'Le Doyen de la Faculté');
+    assert.equal(vars.signataire_nom, 'Prof. TEST');
   });
 });
 
@@ -356,6 +517,17 @@ describe('Certificat rédigé en phrase (sans tableau)', () => {
       buildCertificateVariables({ ...record, customValues: { numero_table: 'T-7' } }, custom)
     );
     assert.equal(phrase, `Nous certifions que ${record.nom} ${record.prenom} suit les cours en ${record.niveau}.`);
+  });
+
+  it('préserve l’indentation, les tabulations, les espaces multiples et les sauts de ligne', () => {
+    const vars = buildCertificateVariables(record, tpl);
+    const formatted =
+      '\tJe soussigné(e)  certifie que {{nom_complet}}.\n\n\n      Le présent certificat est délivré.';
+    const rendered = renderCertificateBody(formatted, vars);
+    assert.equal(
+      rendered,
+      `\tJe soussigné(e)  certifie que ${record.nom} ${record.prenom}.\n\n\n      Le présent certificat est délivré.`
+    );
   });
 });
 
@@ -659,6 +831,63 @@ describe('Intégrité référentielle & Réinscription par lot', () => {
     });
     assert.equal(res2.createdCount, 0);
     assert.equal(res2.skippedCount, 5);
+  });
+
+  it('propose l’année suivante, repère la dernière année de base, fait progresser les niveaux et crée une année avec les étudiants pointés', () => {
+    const db = getSeedDatabase();
+    assert.equal(suggestNextAnneeLabel(db.annees), '2025-2026');
+    const baseId = getLatestBaseAnneeId(db);
+    const baseAnnee = db.annees.find((a) => a.id === baseId);
+    assert.equal(baseAnnee?.annee, '2024-2025');
+
+    const l1Short = db.niveaux.find((n) => n.niveau === 'L1');
+    const l2Short = db.niveaux.find((n) => n.niveau === 'L2');
+    const l1Long = db.niveaux.find((n) => n.niveau === 'Licence 1');
+    const l2Long = db.niveaux.find((n) => n.niveau === 'Licence 2');
+    if (l1Short && l2Short) {
+      assert.equal(findNextNiveauId(db.niveaux, l1Short.id), l2Short.id);
+    }
+    if (l1Long && l2Long) {
+      assert.equal(findNextNiveauId(db.niveaux, l1Long.id), l2Long.id);
+    }
+
+    const baseRows = enrichInscriptions(db).filter((r) => r.idAnnee === baseId);
+    const picked = baseRows.slice(0, 3);
+    const created = createYearWithPointedStudents(db, {
+      targetAnneeLabel: '2025-2026',
+      entries: picked.map((row) => ({
+        idEtudiant: row.idEtudiant,
+        idMention: row.idMention,
+        idNiveau: findNextNiveauId(db.niveaux, row.idNiveau),
+        idParcours: null,
+      })),
+      autoGenerateNumbers: true,
+    });
+
+    assert.equal(created.isNewYear, true);
+    assert.equal(created.targetAnnee.annee, '2025-2026');
+    assert.equal(created.createdCount, 3);
+    assert.equal(created.skippedCount, 0);
+    assert.equal(created.nextDb.etudiants.length, db.etudiants.length);
+    assert.equal(created.nextDb.inscriptions.length, db.inscriptions.length + 3);
+    assert.equal(suggestNextAnneeLabel(created.nextDb.annees), '2026-2027');
+
+    // Re-pointing same students into 2025-2026 must skip duplicates
+    const retry = createYearWithPointedStudents(created.nextDb, {
+      targetAnneeId: created.targetAnnee.id,
+      entries: [
+        {
+          idEtudiant: picked[0].idEtudiant,
+          idMention: picked[0].idMention,
+          idNiveau: picked[0].idNiveau,
+          idParcours: null,
+        },
+      ],
+      autoGenerateNumbers: true,
+    });
+    assert.equal(retry.isNewYear, false);
+    assert.equal(retry.createdCount, 0);
+    assert.equal(retry.skippedCount, 1);
   });
 });
 

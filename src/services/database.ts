@@ -1,15 +1,18 @@
 import * as XLSX from 'xlsx';
 import seedDataRaw from '../data/seedData.json';
 import {
+  AnneeUniversitaire,
   BirthdateAnomaly,
   BreakdownItem,
   CertificateSettings,
+  CertificateSectionKey,
   DashboardStats,
   CertificateTokenEntry,
   DocumentKind,
   DocumentTemplate,
   DocumentTemplates,
   FieldDefinition,
+  HeaderLineItem,
   QrSize,
   DatabaseAuditReport,
   DuplicateCodeEntry,
@@ -17,8 +20,10 @@ import {
   EnrichedInscription,
   Etudiant,
   ImportDuplicateMode,
+  Niveau,
   NormalizedSex,
   SaveResult,
+  SavedDocumentProfile,
   ScolariteDatabase,
   TableEntityKey,
 } from '../types/scolarite';
@@ -27,10 +32,44 @@ const STORAGE_KEY = 'portail_scolarite_uu_db_v1';
 const CERT_SETTINGS_KEY = 'portail_scolarite_uu_cert_settings_v1';
 const ACTIVE_ANNEE_KEY = 'portail_scolarite_uu_active_annee_v1';
 const DOC_TEMPLATES_KEY = 'portail_scolarite_uu_doc_templates_v1';
+const DOC_PROFILES_KEY = 'portail_scolarite_uu_doc_profiles_v1';
+
+export const DEFAULT_SECTION_ORDER: CertificateSectionKey[] = [
+  'reference',
+  'title',
+  'body',
+  'signatureQr',
+  'footer',
+  'legalMention',
+];
+
+export const DEFAULT_CARD_FRONT_FIELDS: string[] = [
+  'numInscription',
+  'niveau',
+  'mention',
+  'dateNaissance',
+];
+
+export const CARD_FRONT_FIELD_OPTIONS: { id: string; label: string }[] = [
+  { id: 'numInscription', label: 'N° inscription' },
+  { id: 'niveau', label: 'Niveau' },
+  { id: 'mention', label: 'Mention' },
+  { id: 'dateNaissance', label: 'Date de naissance' },
+  { id: 'lieuNaissance', label: 'Lieu de naissance' },
+  { id: 'parcours', label: 'Parcours' },
+  { id: 'domaine', label: 'Domaine' },
+  { id: 'grade', label: 'Grade' },
+  { id: 'faculte', label: 'Faculté / Établissement' },
+  { id: 'telephone', label: 'Téléphone' },
+  { id: 'numeroCin', label: 'N° CIN' },
+  { id: 'nationalite', label: 'Nationalité' },
+  { id: 'reference', label: 'Référence' },
+  { id: 'annee', label: 'Année universitaire' },
+];
 
 export const DEFAULT_CERTIFICATE_SETTINGS: CertificateSettings = {
   issueDate: '',
-  signatoryTitle: 'Le Responsable de la Scolarité Centrale',
+  signatoryTitle: '',
   signatoryName: '',
   showFiliation: true,
 };
@@ -157,9 +196,10 @@ export function loadCertificateSettings(): CertificateSettings {
     return {
       issueDate: typeof parsed.issueDate === 'string' ? parsed.issueDate : '',
       signatoryTitle:
-        typeof parsed.signatoryTitle === 'string' && parsed.signatoryTitle.trim()
+        typeof parsed.signatoryTitle === 'string' &&
+        parsed.signatoryTitle !== 'Le Responsable de la Scolarité Centrale'
           ? parsed.signatoryTitle
-          : DEFAULT_CERTIFICATE_SETTINGS.signatoryTitle,
+          : '',
       signatoryName: typeof parsed.signatoryName === 'string' ? parsed.signatoryName : '',
       showFiliation:
         typeof parsed.showFiliation === 'boolean'
@@ -1035,36 +1075,48 @@ export function formatFieldValue(field: FieldDefinition, raw: string): string {
 export function buildCertificateVariables(
   record: EnrichedInscription,
   template: DocumentTemplate,
-  extra: { token?: string; numeroCertificat?: string; dateDelivrance?: string } = {}
+  extra: {
+    token?: string;
+    numeroCertificat?: string;
+    dateDelivrance?: string;
+    signataireTitre?: string;
+    signataireNom?: string;
+  } = {}
 ): Record<string, string> {
   const numero = extra.numeroCertificat || record.numeroCertificat;
   const delivrance = extra.dateDelivrance || record.dateDelivrance;
   const isFemale = (record.sexeNormalized ?? normalizeSex(record.sexe)) === 'F';
+  const fieldById = new Map(template.fields.map((f) => [f.id, f]));
+  const formatStd = (id: string, raw: string) => {
+    const def =
+      fieldById.get(id) ?? STANDARD_FIELD_DEFINITIONS.find((f) => f.id === id);
+    return def ? formatFieldValue(def, raw) : raw;
+  };
 
   const vars: Record<string, string> = {
     civilite: isFemale ? 'Mme/Mlle' : 'M.',
-    nom: formatFieldValue({ ...STANDARD_FIELD_DEFINITIONS[0] }, record.nom),
-    prenom: record.prenom,
-    nom_complet: `${record.nom} ${record.prenom}`.trim(),
-    date_naissance: formatDateFR(record.dateNaissance),
-    lieu_naissance: record.lieuNaissance,
-    classe: record.niveau,
-    niveau: record.niveau,
-    mention: record.mention,
-    annee_scolaire: record.annee,
-    annee: record.annee,
-    matricule: record.numInscription,
+    nom: formatStd('nom', record.nom),
+    prenom: formatStd('prenom', record.prenom),
+    nom_complet: `${formatStd('nom', record.nom)} ${formatStd('prenom', record.prenom)}`.trim(),
+    date_naissance: formatStd('dateNaissance', record.dateNaissance),
+    lieu_naissance: formatStd('lieuNaissance', record.lieuNaissance),
+    classe: formatStd('niveau', record.niveau),
+    niveau: formatStd('niveau', record.niveau),
+    mention: formatStd('mention', record.mention),
+    annee_scolaire: formatStd('annee', record.annee),
+    annee: formatStd('annee', record.annee),
+    matricule: formatStd('matricule', record.numInscription),
     numero_certificat: numero,
-    date_delivrance: formatDateFR(delivrance),
-    faculte: record.faculte,
+    date_delivrance: formatStd('dateDelivrance', delivrance),
+    faculte: formatStd('faculte', record.faculte),
     accord_e: isFemale ? 'e' : '',
-    signataire_titre: template.signature.title,
-    signataire_nom: template.signature.name,
+    signataire_titre: extra.signataireTitre ?? template.signature.title,
+    signataire_nom: extra.signataireNom ?? template.signature.name,
     lieu_signature: template.signature.place,
-    domaine: record.domaine,
-    filiere: record.mention,
+    domaine: formatStd('domaine', record.domaine),
+    filiere: formatStd('mention', record.mention),
     token: extra.token ?? record.certificateToken,
-    reference: record.reference,
+    reference: formatStd('reference', record.reference),
   };
 
   for (const field of template.fields) {
@@ -1256,13 +1308,44 @@ export function registerCertificate(entry: CertificateTokenEntry): void {
   try {
     if (typeof localStorage === 'undefined') return;
     const registry = loadCertificateRegistry().filter(
-      (item) => item.token !== entry.token
+      (item) =>
+        item.token !== entry.token &&
+        item.idInscription !== entry.idInscription
     );
     registry.unshift(entry);
     localStorage.setItem(
       CERT_REGISTRY_KEY,
       JSON.stringify(registry.slice(0, 500))
     );
+  } catch {
+    // ignore registry errors
+  }
+}
+
+/** Met à jour l'entrée du registre local si un certificat déjà émis est modifié. */
+export function syncCertificateRegistryForInscription(
+  record: EnrichedInscription
+): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const registry = loadCertificateRegistry();
+    const index = registry.findIndex(
+      (item) => item.idInscription === record.idInscription
+    );
+    if (index === -1) return;
+    registry[index] = {
+      ...registry[index],
+      token: record.certificateToken || registry[index].token,
+      idEtudiant: record.idEtudiant,
+      numeroCertificat:
+        record.numeroCertificat || registry[index].numeroCertificat,
+      nom: record.nom,
+      prenom: record.prenom,
+      mention: record.mention,
+      niveau: record.niveau,
+      annee: record.annee,
+    };
+    localStorage.setItem(CERT_REGISTRY_KEY, JSON.stringify(registry));
   } catch {
     // ignore registry errors
   }
@@ -1278,6 +1361,107 @@ export function findCertificateByToken(
       (entry) => entry.token.toUpperCase() === normalized
     ) ?? null
   );
+}
+
+export function buildDefaultHeaderLines(
+  header?: Partial<DocumentTemplate['header']>
+): HeaderLineItem[] {
+  return [
+    {
+      id: 'h1',
+      label: 'République / Entité principale',
+      text: header?.line1 ?? "Repoblikan'i Madagasikara",
+      fontFamily: 'Arial',
+      fontSize: 11,
+      bold: true,
+      italic: false,
+      underline: false,
+      align: 'center',
+      uppercase: true,
+      color: '#334155',
+    },
+    {
+      id: 'h2',
+      label: 'Devise',
+      text: header?.line2 ?? 'Fitiavana - Tanindrazana - Fandrosoana',
+      fontFamily: 'Arial',
+      fontSize: 10,
+      bold: false,
+      italic: true,
+      underline: false,
+      align: 'center',
+      uppercase: false,
+      color: '#64748b',
+    },
+    {
+      id: 'h3',
+      label: 'Ministère / Tutelle',
+      text:
+        header?.line3 ??
+        "Ministère de l'Enseignement Supérieur et de la Recherche Scientifique",
+      fontFamily: 'Arial',
+      fontSize: 11,
+      bold: true,
+      italic: false,
+      underline: false,
+      align: 'center',
+      uppercase: true,
+      color: '#1e293b',
+    },
+    {
+      id: 'h4',
+      label: "Nom principal de l'établissement",
+      text: header?.line4 ?? 'Université de Toliara',
+      fontFamily: 'Arial',
+      fontSize: 18,
+      bold: true,
+      italic: false,
+      underline: false,
+      align: 'center',
+      uppercase: true,
+      color: '',
+    },
+    {
+      id: 'h5',
+      label: 'Direction / Service',
+      text:
+        header?.line5 ??
+        "Direction des Systèmes d'Information et du Numérique · Scolarité Centrale",
+      fontFamily: 'Arial',
+      fontSize: 11,
+      bold: false,
+      italic: false,
+      underline: false,
+      align: 'center',
+      uppercase: false,
+      color: '#334155',
+    },
+  ];
+}
+
+export function getResolvedHeaderLines(
+  header: DocumentTemplate['header']
+): HeaderLineItem[] {
+  if (Array.isArray(header.lines) && header.lines.length > 0) {
+    return header.lines;
+  }
+  return buildDefaultHeaderLines(header);
+}
+
+export function syncHeaderLegacyFields(
+  header: DocumentTemplate['header'],
+  lines: HeaderLineItem[]
+): DocumentTemplate['header'] {
+  const mainLine = lines.find((l) => l.id === 'h4') ?? lines[3] ?? lines[0];
+  return {
+    ...header,
+    lines,
+    line1: lines[0]?.text ?? '',
+    line2: lines[1]?.text ?? '',
+    line3: lines[2]?.text ?? '',
+    line4: mainLine?.text ?? '',
+    line5: lines[4]?.text ?? '',
+  };
 }
 
 function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
@@ -1296,6 +1480,7 @@ function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
         "Ministère de l'Enseignement Supérieur et de la Recherche Scientifique",
       line4: 'Université de Toliara',
       line5: "Direction des Systèmes d'Information et du Numérique · Scolarité Centrale",
+      lines: buildDefaultHeaderLines(),
     },
     texts: {
       title: 'Certificat de Scolarité',
@@ -1374,6 +1559,29 @@ function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
       fontFamily: 'display',
       fontSize: 14,
     },
+    layout: {
+      sectionOrder: [...DEFAULT_SECTION_ORDER],
+      headerLayout: 'classic',
+      logoSizePx: 80,
+      secondaryLogoSizePx: 40,
+      showHeaderDivider: true,
+      headerDividerColor: '',
+      titleAlign: 'center',
+      titleUnderline: true,
+      titleUppercase: true,
+      titleSizeEm: 1.65,
+      referenceTemplate: 'Réf : {{reference}}/MEsupRes/U. U/DSIN/Sco.Cent',
+      matriculeLabel: 'Matricule :',
+      signatureAlign: 'right',
+      datePhraseTemplate: 'Fait à {{lieu}}, le {{date}}',
+      signatureImageHeightPx: 64,
+      pagePaddingPx: 36,
+      borderWidthPx: 1,
+      borderRadiusPx: 2,
+      backgroundColor: '#ffffff',
+      freeZones: [],
+      elementStyles: {},
+    },
     print: {
       perSheet: 1,
       orientation: 'portrait',
@@ -1386,12 +1594,18 @@ function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
       printMode: 'fold',
       showPhoto: true,
       photoHint: 'Photo non fournie',
+      photoPosition: 'left',
+      photoShape: 'rounded',
+      qrPlacement: 'both',
+      headerStyle: 'solid',
       headerColor: '#1d4ed8',
       showValidity: true,
       validityYears: 1,
       backTitle: 'Carte d’étudiant',
       backNote:
         "Cette carte est strictement personnelle. Elle doit être présentée à toute demande des autorités universitaires.",
+      footerText: '',
+      frontFields: [...DEFAULT_CARD_FRONT_FIELDS],
       rounded: true,
     },
   };
@@ -1502,6 +1716,40 @@ export function mergeDocumentTemplate(
     );
     merged.fields = [...standard, ...customs];
   }
+  if (Array.isArray(stored.layout?.sectionOrder)) {
+    const valid = new Set<CertificateSectionKey>(DEFAULT_SECTION_ORDER);
+    const ordered = stored.layout.sectionOrder.filter((k): k is CertificateSectionKey =>
+      valid.has(k)
+    );
+    for (const defKey of DEFAULT_SECTION_ORDER) {
+      if (!ordered.includes(defKey)) ordered.push(defKey);
+    }
+    merged.layout.sectionOrder = ordered;
+  }
+  if (Array.isArray(stored.header?.lines) && stored.header.lines.length > 0) {
+    const normalizedLines: HeaderLineItem[] = stored.header.lines.map(
+      (line, idx) => ({
+        id: line.id || `hl_${idx + 1}`,
+        label: line.label || `Ligne ${idx + 1}`,
+        text: typeof line.text === 'string' ? line.text : '',
+        fontFamily: line.fontFamily || 'Arial',
+        fontSize:
+          typeof line.fontSize === 'number' && line.fontSize > 0
+            ? line.fontSize
+            : 11,
+        bold: Boolean(line.bold),
+        italic: Boolean(line.italic),
+        underline: Boolean(line.underline),
+        align:
+          line.align === 'left' || line.align === 'right' ? line.align : 'center',
+        uppercase: Boolean(line.uppercase),
+        color: typeof line.color === 'string' ? line.color : '',
+      })
+    );
+    merged.header = syncHeaderLegacyFields(merged.header, normalizedLines);
+  } else {
+    merged.header.lines = buildDefaultHeaderLines(merged.header);
+  }
   return merged;
 }
 
@@ -1533,6 +1781,242 @@ export function resetDocumentTemplate(kind: DocumentKind): DocumentTemplate {
   return structuredClone(DEFAULT_DOCUMENT_TEMPLATES[kind]);
 }
 
+export interface DocumentThemePreset {
+  id: string;
+  kind: DocumentKind;
+  name: string;
+  description: string;
+  patch: Partial<DocumentTemplate>;
+}
+
+export const DOCUMENT_THEME_PRESETS: DocumentThemePreset[] = [
+  {
+    id: 'cert-classique',
+    kind: 'certificat',
+    name: 'Classique officiel',
+    description: 'En-tête symétrique, cadre fin ardoise, phrase rédigée justifiée',
+    patch: {
+      texts: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.texts,
+        title: 'Certificat de Scolarité',
+      },
+      appearance: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.appearance,
+        accentColor: '#0f172a',
+        textColor: '#0f172a',
+        borderStyle: 'thin',
+      },
+      body: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.body,
+        mode: 'phrase',
+        style: {
+          ...DEFAULT_DOCUMENT_TEMPLATES.certificat.body.style,
+          fontFamily: 'sans',
+          align: 'justify',
+        },
+      },
+      layout: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.layout,
+        headerLayout: 'classic',
+        titleAlign: 'center',
+        titleUnderline: true,
+        backgroundColor: '#ffffff',
+        borderWidthPx: 1,
+      },
+    },
+  },
+  {
+    id: 'cert-solemn-serif',
+    kind: 'certificat',
+    name: 'Solennel double cadre',
+    description: 'Double bordure bordeaux, police Serif académique, filigrane discret',
+    patch: {
+      appearance: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.appearance,
+        accentColor: '#7f1d1d',
+        textColor: '#1e293b',
+        borderStyle: 'double',
+      },
+      blocks: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.blocks,
+        watermark: true,
+      },
+      body: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.body,
+        mode: 'phrase',
+        style: {
+          ...DEFAULT_DOCUMENT_TEMPLATES.certificat.body.style,
+          fontFamily: 'serif',
+          align: 'justify',
+          lineHeight: 1.65,
+        },
+      },
+      layout: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.layout,
+        headerLayout: 'centered',
+        titleAlign: 'center',
+        titleUnderline: true,
+        backgroundColor: '#fffdf9',
+        borderWidthPx: 4,
+      },
+    },
+  },
+  {
+    id: 'cert-moderne-bleu',
+    kind: 'certificat',
+    name: 'Moderne institutionnel',
+    description: 'En-tête aligné à gauche, bleu universitaire, sans bordure extérieure',
+    patch: {
+      appearance: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.appearance,
+        accentColor: '#1d4ed8',
+        textColor: '#0f172a',
+        borderStyle: 'none',
+      },
+      body: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.body,
+        mode: 'phrase',
+        style: {
+          ...DEFAULT_DOCUMENT_TEMPLATES.certificat.body.style,
+          fontFamily: 'display',
+          align: 'left',
+          lineHeight: 1.6,
+        },
+      },
+      layout: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.layout,
+        headerLayout: 'left',
+        titleAlign: 'left',
+        titleUnderline: false,
+        backgroundColor: '#ffffff',
+      },
+    },
+  },
+  {
+    id: 'cert-tableau-compact',
+    kind: 'certificat',
+    name: 'Fiche structurée (Tableau)',
+    description: 'Données présentées en tableau clair · idéal pour impression A5',
+    patch: {
+      body: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.body,
+        mode: 'table',
+      },
+      print: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.certificat.print,
+        perSheet: 2,
+        twoUpLayout: 'side-by-side',
+      },
+    },
+  },
+  {
+    id: 'carte-bleue',
+    kind: 'carte',
+    name: 'Bleu universitaire',
+    description: 'Bandeau bleu vif, photo à gauche, QR recto & verso',
+    patch: {
+      appearance: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.carte.appearance,
+        accentColor: '#1d4ed8',
+        textColor: '#0f172a',
+      },
+      card: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.carte.card,
+        headerColor: '#1d4ed8',
+        headerStyle: 'solid',
+        photoPosition: 'left',
+        photoShape: 'rounded',
+        qrPlacement: 'both',
+        rounded: true,
+      },
+    },
+  },
+  {
+    id: 'carte-ardoise-degrade',
+    kind: 'carte',
+    name: 'Ardoise & Or',
+    description: 'Bandeau dégradé sombre, photo circulaire à droite',
+    patch: {
+      appearance: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.carte.appearance,
+        accentColor: '#0f172a',
+        textColor: '#0f172a',
+      },
+      card: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.carte.card,
+        headerColor: '#0f172a',
+        headerStyle: 'gradient',
+        photoPosition: 'right',
+        photoShape: 'circle',
+        qrPlacement: 'both',
+        rounded: true,
+      },
+    },
+  },
+  {
+    id: 'carte-emeraude',
+    kind: 'carte',
+    name: 'Émeraude épuré',
+    description: 'Bandeau minimaliste vert foncé, coins nets',
+    patch: {
+      appearance: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.carte.appearance,
+        accentColor: '#047857',
+        textColor: '#0f172a',
+      },
+      card: {
+        ...DEFAULT_DOCUMENT_TEMPLATES.carte.card,
+        headerColor: '#047857',
+        headerStyle: 'minimal',
+        photoPosition: 'left',
+        photoShape: 'rect',
+        qrPlacement: 'back',
+        rounded: false,
+      },
+    },
+  },
+];
+
+export function loadSavedProfiles(): SavedDocumentProfile[] {
+  try {
+    if (typeof localStorage === 'undefined') return [];
+    const raw = localStorage.getItem(DOC_PROFILES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as SavedDocumentProfile[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item) => ({
+      ...item,
+      template: mergeDocumentTemplate(item.kind, item.template),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function saveSavedProfiles(profiles: SavedDocumentProfile[]): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(DOC_PROFILES_KEY, JSON.stringify(profiles));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function upsertSavedProfile(
+  profile: SavedDocumentProfile
+): SavedDocumentProfile[] {
+  const existing = loadSavedProfiles().filter((p) => p.id !== profile.id);
+  const next = [profile, ...existing];
+  saveSavedProfiles(next);
+  return next;
+}
+
+export function deleteSavedProfile(id: string): SavedDocumentProfile[] {
+  const next = loadSavedProfiles().filter((p) => p.id !== id);
+  saveSavedProfiles(next);
+  return next;
+}
+
 /** Texte encodé dans le QR Code du document, selon les champs activés. */
 export function buildDocumentQrPayload(
   record: EnrichedInscription,
@@ -1551,13 +2035,14 @@ export function buildDocumentQrPayload(
   return lines.join('\n');
 }
 
-/** Valeur affichée pour une ligne du tableau académique. */
+/** Valeur affichée pour une ligne du tableau académique ou d'une carte. */
 export function getDocumentRowValue(
   record: EnrichedInscription,
   rowId: string
 ): string {
   switch (rowId) {
     case 'institution':
+    case 'faculte':
       return record.faculte;
     case 'domaine':
       return record.domaine;
@@ -1575,8 +2060,18 @@ export function getDocumentRowValue(
       return record.numInscription || '—';
     case 'reference':
       return record.reference || '—';
+    case 'dateNaissance':
+      return formatDateFR(record.dateNaissance) || '—';
+    case 'lieuNaissance':
+      return record.lieuNaissance || '—';
+    case 'telephone':
+      return record.telephone || '—';
+    case 'numeroCin':
+      return record.numeroCin || '—';
+    case 'nationalite':
+      return record.nationalite || '—';
     default:
-      return '';
+      return record.customValues?.[rowId] ?? '';
   }
 }
 
@@ -1846,6 +2341,184 @@ export function batchReinscribe(
   }
 
   return { nextDb, createdCount, skippedCount };
+}
+
+export function suggestNextAnneeLabel(annees: { annee: string }[]): string {
+  const existing = new Set(
+    annees.map((a) => a.annee.trim().toLowerCase()).filter(Boolean)
+  );
+  const latest = getLatestAnneeLabel(annees);
+  const rangeMatch = latest.match(/(\d{4})\s*[-–/]\s*(\d{4})/);
+  let startYear = new Date().getFullYear();
+  let endYear = startYear + 1;
+
+  if (rangeMatch) {
+    startYear = Number(rangeMatch[1]) + 1;
+    endYear = Number(rangeMatch[2]) + 1;
+  } else {
+    const singleMatch = latest.match(/(\d{4})/);
+    if (singleMatch) {
+      startYear = Number(singleMatch[1]) + 1;
+      endYear = startYear + 1;
+    }
+  }
+
+  let candidate = `${startYear}-${endYear}`;
+  let guard = 0;
+  while (existing.has(candidate.toLowerCase()) && guard < 20) {
+    startYear += 1;
+    endYear += 1;
+    candidate = `${startYear}-${endYear}`;
+    guard += 1;
+  }
+  return candidate;
+}
+
+export function getLatestBaseAnneeId(
+  db: ScolariteDatabase,
+  excludeAnneeId?: number
+): number {
+  const sorted = sortAnneesDesc(db.annees).filter((a) => a.id !== excludeAnneeId);
+  if (sorted.length === 0) return db.annees[0]?.id ?? 0;
+  const counts = new Map<number, number>();
+  for (const ins of db.inscriptions) {
+    counts.set(ins.idAnnee, (counts.get(ins.idAnnee) ?? 0) + 1);
+  }
+  const withInscriptions = sorted.find((a) => (counts.get(a.id) ?? 0) > 0);
+  return withInscriptions?.id ?? sorted[0].id;
+}
+
+export function findNextNiveauId(
+  niveaux: Niveau[],
+  currentNiveauId: number
+): number {
+  const current = niveaux.find((n) => n.id === currentNiveauId);
+  if (!current) return currentNiveauId;
+
+  const key = normalizeNiveauKey(current.niveau);
+  let nextKey = '';
+  const match = key.match(/^(licence|master|doctorat)\s+(\d+)$/);
+  if (match) {
+    const cycle = match[1];
+    const num = Number(match[2]);
+    if (cycle === 'licence') {
+      nextKey = num < 3 ? `licence ${num + 1}` : 'master 1';
+    } else if (cycle === 'master') {
+      nextKey = num < 2 ? `master ${num + 1}` : 'doctorat 1';
+    } else if (cycle === 'doctorat') {
+      nextKey = num < 3 ? `doctorat ${num + 1}` : '';
+    }
+  }
+
+  if (!nextKey) return currentNiveauId;
+
+  const candidates = niveaux.filter(
+    (n) => normalizeNiveauKey(n.niveau) === nextKey
+  );
+  if (candidates.length === 0) return currentNiveauId;
+  if (candidates.length === 1) return candidates[0].id;
+
+  const currentIsShort = /^[lmd]\s*\d+/i.test(current.niveau.trim());
+  const styled = candidates.find(
+    (c) => /^[lmd]\s*\d+/i.test(c.niveau.trim()) === currentIsShort
+  );
+  return (styled ?? candidates[0]).id;
+}
+
+export function createYearWithPointedStudents(
+  db: ScolariteDatabase,
+  params: {
+    targetAnneeLabel?: string;
+    targetAnneeId?: number;
+    entries: Array<{
+      idEtudiant: number;
+      idMention: number;
+      idNiveau: number;
+      idParcours: number | null;
+    }>;
+    autoGenerateNumbers: boolean;
+  }
+): {
+  nextDb: ScolariteDatabase;
+  targetAnnee: AnneeUniversitaire;
+  isNewYear: boolean;
+  createdCount: number;
+  skippedCount: number;
+} {
+  const nextDb = structuredClone(db);
+  const cleanLabel = (params.targetAnneeLabel ?? '').trim();
+
+  let targetAnnee =
+    (params.targetAnneeId
+      ? nextDb.annees.find((a) => a.id === params.targetAnneeId)
+      : undefined) ??
+    (cleanLabel
+      ? nextDb.annees.find(
+          (a) => a.annee.trim().toLowerCase() === cleanLabel.toLowerCase()
+        )
+      : undefined);
+
+  let isNewYear = false;
+  if (!targetAnnee) {
+    if (!cleanLabel) {
+      throw new Error("Veuillez indiquer un libellé d'année universitaire.");
+    }
+    targetAnnee = {
+      id: getNextId(nextDb.annees),
+      annee: cleanLabel,
+    };
+    nextDb.annees.push(targetAnnee);
+    isNewYear = true;
+  }
+
+  let createdCount = 0;
+  let skippedCount = 0;
+  let nextInsId = getNextId(nextDb.inscriptions);
+  const yearShort = targetAnnee.annee.slice(0, 4).replace(/\D/g, '') || '2025';
+  const existingRefs = new Set(nextDb.inscriptions.map((i) => i.reference));
+  const existingNums = new Set(nextDb.inscriptions.map((i) => i.numInscription));
+  const seenStudents = new Set<number>();
+
+  for (const entry of params.entries) {
+    if (seenStudents.has(entry.idEtudiant)) continue;
+    seenStudents.add(entry.idEtudiant);
+
+    const alreadyInYear = nextDb.inscriptions.some(
+      (i) =>
+        i.idEtudiant === entry.idEtudiant && i.idAnnee === targetAnnee!.id
+    );
+    if (alreadyInYear) {
+      skippedCount++;
+      continue;
+    }
+
+    let reference = '';
+    let numInscription = '';
+    if (params.autoGenerateNumbers) {
+      let seq = nextInsId;
+      do {
+        reference = `${yearShort.slice(-2)}${String(seq).padStart(4, '0')}`;
+        numInscription = String(seq).padStart(6, '0');
+        seq++;
+      } while (existingRefs.has(reference) || existingNums.has(numInscription));
+      existingRefs.add(reference);
+      existingNums.add(numInscription);
+    }
+
+    nextDb.inscriptions.push({
+      id: nextInsId++,
+      idEtudiant: entry.idEtudiant,
+      idAnnee: targetAnnee.id,
+      idMention: entry.idMention,
+      idNiveau: entry.idNiveau,
+      idParcours: entry.idParcours,
+      reference,
+      numInscription,
+    });
+    createdCount++;
+  }
+
+  return { nextDb, targetAnnee, isNewYear, createdCount, skippedCount };
 }
 
 export function exportInscriptionsToXlsx(
@@ -2472,6 +3145,26 @@ export function verifyCertificateQuery(
   }
 
   // Check if user pasted a multi-line QR payload
+  const tokenLineMatch = trimmed.match(/Jeton\s*:\s*([A-Z0-9-]+)/i);
+  if (tokenLineMatch) {
+    const tokenVal = tokenLineMatch[1].trim().toUpperCase();
+    const byLineToken = all.filter(
+      (r) => r.certificateToken && r.certificateToken.toUpperCase() === tokenVal
+    );
+    if (byLineToken.length > 0) return byLineToken;
+  }
+
+  const certNumLineMatch = trimmed.match(/N°\s*certificat\s*:\s*([^\n\r]+)/i);
+  if (certNumLineMatch) {
+    const numVal = certNumLineMatch[1].trim().toLowerCase();
+    if (numVal && numVal !== '—') {
+      const byLineNum = all.filter(
+        (r) => r.numeroCertificat.toLowerCase() === numVal
+      );
+      if (byLineNum.length > 0) return byLineNum;
+    }
+  }
+
   const refMatch = trimmed.match(/R[ée]f[ée]rence\s*:\s*([^\n\r]+)/i);
   const nomMatch = trimmed.match(/NOM\s*:\s*([^\n\r]+)/i);
   const anneeMatch = trimmed.match(/Ann[ée]e\s*:\s*([^\n\r]+)/i);
@@ -2513,6 +3206,7 @@ export function verifyCertificateQuery(
   const q = trimmed.toLowerCase();
   const qNoSpaces = q.replace(/\s+/g, '');
   return all.filter((r) => {
+    if (r.numeroCertificat && r.numeroCertificat.toLowerCase() === q) return true;
     if (r.reference.toLowerCase() === q) return true;
     if (r.numInscription.toLowerCase() === q) return true;
     if (normalizeCin(r.numeroCin).toLowerCase() === qNoSpaces && qNoSpaces.length >= 6) return true;

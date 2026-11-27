@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Search,
   Trash2,
+  UserCheck,
   X,
 } from 'lucide-react';
 import {
@@ -47,6 +48,7 @@ interface AccueilViewProps {
   onUpdateDb: (nextDb: ScolariteDatabase, toastMessage?: string) => void;
   initialQuickFilter?: QuickFilterMode;
   onClearInitialFilter?: () => void;
+  onOpenYearPointer?: (mode: 'create' | 'populate', targetAnnee?: string) => void;
 }
 
 export type QuickFilterMode = 'all' | 'male' | 'female' | 'no_cin' | 'anomalies';
@@ -68,6 +70,7 @@ export function AccueilView({
   onUpdateDb,
   initialQuickFilter = 'all',
   onClearInitialFilter,
+  onOpenYearPointer,
 }: AccueilViewProps) {
   const [selectedFaculte, setSelectedFaculte] = useState<string>('');
   const [selectedDomaine, setSelectedDomaine] = useState<string>('');
@@ -107,7 +110,7 @@ export function AccueilView({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !modalOpen) {
         if (certificateRow) setCertificateRow(null);
         else if (deleteTarget) setDeleteTarget(null);
         else if (bulkDeleteOpen) setBulkDeleteOpen(false);
@@ -115,7 +118,7 @@ export function AccueilView({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [certificateRow, deleteTarget, bulkDeleteOpen]);
+  }, [certificateRow, deleteTarget, bulkDeleteOpen, modalOpen]);
 
   const certSettings = useMemo(() => loadCertificateSettings(), []);
   const docTemplates = useMemo(() => loadDocumentTemplates(), []);
@@ -396,20 +399,18 @@ export function AccueilView({
       nextDb = result.nextDb;
       const record = result.record ?? target;
       prepared.push(record);
-      if (result.created) {
-        registerCertificate({
-          token: result.token,
-          idInscription: record.idInscription,
-          idEtudiant: record.idEtudiant,
-          numeroCertificat: result.numeroCertificat,
-          nom: record.nom,
-          prenom: record.prenom,
-          mention: record.mention,
-          niveau: record.niveau,
-          annee: record.annee,
-          issuedAt: new Date().toISOString(),
-        });
-      }
+      registerCertificate({
+        token: result.token || record.certificateToken,
+        idInscription: record.idInscription,
+        idEtudiant: record.idEtudiant,
+        numeroCertificat: result.numeroCertificat || record.numeroCertificat,
+        nom: record.nom,
+        prenom: record.prenom,
+        mention: record.mention,
+        niveau: record.niveau,
+        annee: record.annee,
+        issuedAt: new Date().toISOString(),
+      });
     }
     if (nextDb !== db) {
       onUpdateDb(nextDb, `${prepared.length} certificat(s) numéroté(s) et horodaté(s).`);
@@ -542,6 +543,17 @@ export function AccueilView({
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
                 Exporter Excel
               </button>
+              {onOpenYearPointer && (
+                <button
+                  type="button"
+                  onClick={() => onOpenYearPointer('populate', effectiveAnnee)}
+                  title="Pointer un à un les étudiants depuis la dernière année sans ressaisir leurs informations"
+                  className="px-3.5 py-2 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 inline-flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  Pointer depuis une année
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -867,10 +879,50 @@ export function AccueilView({
                       colSpan={13}
                       className="px-6 py-12 text-center text-slate-500"
                     >
-                      <p className="font-medium text-slate-700">Aucun étudiant trouvé</p>
-                      <p className="text-xs mt-1">
-                        Modifiez vos critères de recherche ou ajoutez une nouvelle inscription.
-                      </p>
+                      {allEnriched.every((r) => r.annee !== effectiveAnnee) &&
+                      onOpenYearPointer ? (
+                        <div className="space-y-3">
+                          <p className="font-medium text-slate-800">
+                            Aucune inscription enregistrée pour l&apos;année {effectiveAnnee}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Prenez la dernière année comme base et pointez un à un les étudiants à reconduire sans tout ressaisir.
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onOpenYearPointer('populate', effectiveAnnee)
+                              }
+                              className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 inline-flex items-center gap-1.5"
+                            >
+                              <UserCheck className="w-4 h-4" />
+                              Pointer des étudiants depuis la dernière année
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingRow(null);
+                                setReinscribeId(null);
+                                setModalOpen(true);
+                              }}
+                              className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 inline-flex items-center gap-1.5"
+                            >
+                              <Plus className="w-4 h-4" />
+                              Nouvel étudiant
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="font-medium text-slate-700">
+                            Aucun étudiant trouvé
+                          </p>
+                          <p className="text-xs mt-1">
+                            Modifiez vos critères de recherche ou ajoutez une nouvelle inscription.
+                          </p>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ) : (
@@ -1189,6 +1241,12 @@ export function AccueilView({
           }}
           onSave={(nextDb, msg) => {
             onUpdateDb(nextDb, msg);
+            if (certificateRow && editingRow?.idInscription === certificateRow.idInscription) {
+              const refreshed = enrichInscriptions(nextDb).find(
+                (r) => r.idInscription === certificateRow.idInscription
+              );
+              if (refreshed) setCertificateRow(refreshed);
+            }
             setModalOpen(false);
             setEditingRow(null);
             setReinscribeId(null);
@@ -1232,6 +1290,30 @@ export function AccueilView({
                 <button
                   type="button"
                   onClick={() => {
+                    setEditingRow(certificateRow);
+                    setReinscribeId(null);
+                    setModalOpen(true);
+                  }}
+                  className="px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 inline-flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Modifier les infos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    registerCertificate({
+                      token: certificateRow.certificateToken,
+                      idInscription: certificateRow.idInscription,
+                      idEtudiant: certificateRow.idEtudiant,
+                      numeroCertificat: certificateRow.numeroCertificat,
+                      nom: certificateRow.nom,
+                      prenom: certificateRow.prenom,
+                      mention: certificateRow.mention,
+                      niveau: certificateRow.niveau,
+                      annee: certificateRow.annee,
+                      issuedAt: new Date().toISOString(),
+                    });
                     setBatchPrintActive(false);
                     window.print();
                   }}

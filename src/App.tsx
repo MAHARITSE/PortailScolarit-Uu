@@ -8,6 +8,7 @@ import {
   Home,
   LayoutTemplate,
   Menu,
+  Plus,
   Printer,
   Table2,
   X,
@@ -17,6 +18,7 @@ import { AdministrationView } from './components/AdministrationView';
 import { CertificatsView } from './components/CertificatsView';
 import { DashboardView } from './components/DashboardView';
 import { ImportationView } from './components/ImportationView';
+import { NewYearReinscriptionModal } from './components/NewYearReinscriptionModal';
 import { SauvegardeView } from './components/SauvegardeView';
 import { TablesSaisieView } from './components/TablesSaisieView';
 import { ToastContainer, ToastItem } from './components/Toast';
@@ -56,6 +58,10 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [pendingQuickFilter, setPendingQuickFilter] =
     useState<QuickFilterMode>('all');
+  const [yearPointerModal, setYearPointerModal] = useState<{
+    mode: 'create' | 'populate';
+    targetAnnee?: string;
+  } | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const toastCounter = useRef(1);
 
@@ -263,6 +269,15 @@ export default function App() {
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                onClick={() => setYearPointerModal({ mode: 'create' })}
+                title="Ajouter une année universitaire et pointer des étudiants depuis la dernière année"
+                className="ml-0.5 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 bg-blue-100/80 hover:bg-blue-200/80 rounded inline-flex items-center gap-1 transition-colors"
+              >
+                <Plus className="w-3 h-3" />
+                <span className="hidden md:inline">Nouvelle</span>
+              </button>
             </div>
             {activeView !== 'dashboard' && anomalyCount > 0 && (
               <button
@@ -295,6 +310,9 @@ export default function App() {
               onUpdateDb={handleUpdateDb}
               initialQuickFilter={pendingQuickFilter}
               onClearInitialFilter={() => setPendingQuickFilter('all')}
+              onOpenYearPointer={(mode, targetAnnee) =>
+                setYearPointerModal({ mode, targetAnnee })
+              }
             />
           )}
           {activeView === 'dashboard' && (
@@ -324,13 +342,47 @@ export default function App() {
             />
           )}
           {activeView === 'tables' && (
-            <TablesSaisieView db={db} onUpdateDb={handleUpdateDb} />
+            <TablesSaisieView
+              db={db}
+              onUpdateDb={handleUpdateDb}
+              onOpenYearPointer={(mode, targetAnnee) =>
+                setYearPointerModal({ mode, targetAnnee })
+              }
+            />
           )}
           {activeView === 'sauvegarde' && (
             <SauvegardeView db={db} onUpdateDb={handleUpdateDb} />
           )}
         </main>
       </div>
+
+      {yearPointerModal && (
+        <NewYearReinscriptionModal
+          db={db}
+          mode={yearPointerModal.mode}
+          initialTargetAnnee={yearPointerModal.targetAnnee}
+          onClose={() => setYearPointerModal(null)}
+          onConfirm={(nextDb, targetAnneeLabel, createdCount, skippedCount, isNewYear) => {
+            const parts: string[] = [];
+            if (isNewYear) {
+              parts.push(`Année ${targetAnneeLabel} créée`);
+            }
+            if (createdCount > 0) {
+              parts.push(
+                `${createdCount} étudiant(s) ajouté(s) en ${targetAnneeLabel}`
+              );
+            } else if (!isNewYear) {
+              parts.push(`Aucun nouvel étudiant ajouté en ${targetAnneeLabel}`);
+            }
+            if (skippedCount > 0) {
+              parts.push(`${skippedCount} déjà inscrit(s) ignoré(s)`);
+            }
+            handleUpdateDb(nextDb, `${parts.join(' · ')}.`);
+            handleAnneeChange(targetAnneeLabel);
+            setYearPointerModal(null);
+          }}
+        />
+      )}
 
       {/* Toast Feedback */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />

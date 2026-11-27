@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileBadge,
+  Pencil,
   Printer,
   QrCode,
   Search,
@@ -35,6 +36,7 @@ import {
 } from '../types/scolarite';
 import { CertificateDocument } from './CertificateDocument';
 import { CertificatePrintSheets } from './CertificatePrintSheets';
+import { StudentInscriptionModal } from './StudentInscriptionModal';
 
 interface CertificatsViewProps {
   db: ScolariteDatabase;
@@ -63,6 +65,9 @@ export function CertificatsView({
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [previewItem, setPreviewItem] = useState<EnrichedInscription | null>(
+    null
+  );
+  const [editingItem, setEditingItem] = useState<EnrichedInscription | null>(
     null
   );
   const [printTargets, setPrintTargets] = useState<EnrichedInscription[]>([]);
@@ -177,14 +182,14 @@ export function CertificatsView({
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !editingItem) {
         setPreviewItem(null);
         setShowVerifier(false);
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, []);
+  }, [editingItem]);
 
   const updateSettings = (patch: Partial<CertificateSettings>) => {
     setSettings((prev) => {
@@ -237,20 +242,18 @@ export function CertificatsView({
       nextDb = result.nextDb;
       const record = result.record ?? target;
       prepared.push(record);
-      if (result.created) {
-        registerCertificate({
-          token: result.token,
-          idInscription: record.idInscription,
-          idEtudiant: record.idEtudiant,
-          numeroCertificat: result.numeroCertificat,
-          nom: record.nom,
-          prenom: record.prenom,
-          mention: record.mention,
-          niveau: record.niveau,
-          annee: record.annee,
-          issuedAt: new Date().toISOString(),
-        });
-      }
+      registerCertificate({
+        token: result.token || record.certificateToken,
+        idInscription: record.idInscription,
+        idEtudiant: record.idEtudiant,
+        numeroCertificat: result.numeroCertificat || record.numeroCertificat,
+        nom: record.nom,
+        prenom: record.prenom,
+        mention: record.mention,
+        niveau: record.niveau,
+        annee: record.annee,
+        issuedAt: new Date().toISOString(),
+      });
     }
     if (onUpdateDb && nextDb !== db) {
       onUpdateDb(
@@ -474,9 +477,10 @@ export function CertificatsView({
 
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Fonction du signataire
+                  Fonction du signataire (vide = modèle)
                 </label>
                 <input
+                  placeholder={template.signature.title || 'Modèle actif'}
                   value={settings.signatoryTitle}
                   onChange={(e) =>
                     updateSettings({ signatoryTitle: e.target.value })
@@ -487,10 +491,10 @@ export function CertificatsView({
 
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Nom du signataire (optionnel)
+                  Nom du signataire (vide = modèle)
                 </label>
                 <input
-                  placeholder="Ex. Dr. RAKOTO Jean"
+                  placeholder={template.signature.name || 'Ex. Dr. RAKOTO Jean'}
                   value={settings.signatoryName}
                   onChange={(e) =>
                     updateSettings({ signatoryName: e.target.value })
@@ -689,6 +693,15 @@ export function CertificatsView({
                           <div className="inline-flex items-center gap-1.5">
                             <button
                               type="button"
+                              onClick={() => setEditingItem(item)}
+                              title="Modifier les informations de l'étudiant et du certificat"
+                              className="px-2.5 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded inline-flex items-center gap-1"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              Modifier
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => openPreview(item)}
                               className="px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded"
                             >
@@ -756,7 +769,27 @@ export function CertificatsView({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => setEditingItem(previewItem)}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 inline-flex items-center gap-1.5"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Modifier les infos
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
+                    registerCertificate({
+                      token: previewItem.certificateToken,
+                      idInscription: previewItem.idInscription,
+                      idEtudiant: previewItem.idEtudiant,
+                      numeroCertificat: previewItem.numeroCertificat,
+                      nom: previewItem.nom,
+                      prenom: previewItem.prenom,
+                      mention: previewItem.mention,
+                      niveau: previewItem.niveau,
+                      annee: previewItem.annee,
+                      issuedAt: new Date().toISOString(),
+                    });
                     setPrintTargets([]);
                     setTimeout(() => window.print(), 40);
                   }}
@@ -881,6 +914,28 @@ export function CertificatsView({
             settings={settings}
           />
         </div>
+      )}
+
+      {/* Edit Student & Certificate Info Modal */}
+      {editingItem && (
+        <StudentInscriptionModal
+          db={db}
+          editing={editingItem}
+          onClose={() => setEditingItem(null)}
+          onSave={(nextDb, msg) => {
+            onUpdateDb?.(nextDb, msg);
+            if (
+              previewItem &&
+              previewItem.idInscription === editingItem.idInscription
+            ) {
+              const refreshed = enrichInscriptions(nextDb).find(
+                (r) => r.idInscription === editingItem.idInscription
+              );
+              if (refreshed) setPreviewItem(refreshed);
+            }
+            setEditingItem(null);
+          }}
+        />
       )}
     </div>
   );

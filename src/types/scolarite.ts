@@ -233,6 +233,42 @@ export type CardPrintMode = 'fold' | 'side';
 
 export type BodyFontFamily = 'sans' | 'serif' | 'display' | 'mono';
 export type BodyTextAlign = 'left' | 'center' | 'justify';
+export type PageTextAlign = 'left' | 'center' | 'right' | 'justify';
+
+export interface ElementTypography {
+  fontFamily: string;
+  /** Taille en px (0 = taille héritée) */
+  fontSize: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  uppercase: boolean;
+  align: PageTextAlign;
+  color?: string;
+  /** Décalage libre sur la page (en px) */
+  offsetX?: number;
+  offsetY?: number;
+}
+
+export type StyledZoneKey =
+  | 'reference'
+  | 'title'
+  | 'body'
+  | 'signature'
+  | 'qr'
+  | 'footer'
+  | 'legalMention';
+
+export type PageElementSelection =
+  | { kind: 'headerLine'; id: string }
+  | { kind: 'reference' }
+  | { kind: 'title' }
+  | { kind: 'body' }
+  | { kind: 'freeZone'; id: string }
+  | { kind: 'signature' }
+  | { kind: 'qr' }
+  | { kind: 'footer' }
+  | { kind: 'legalMention' };
 
 export interface BodyTypography {
   fontFamily: BodyFontFamily;
@@ -314,10 +350,82 @@ export interface CertificateTokenEntry {
 export type DocumentBorderStyle = 'none' | 'thin' | 'double';
 export type DocumentFontFamily = 'sans' | 'display' | 'mono';
 
+export type CertificateSectionKey =
+  | 'reference'
+  | 'title'
+  | 'body'
+  | 'signatureQr'
+  | 'footer'
+  | 'legalMention';
+
+export type HeaderLayoutMode = 'classic' | 'left' | 'centered' | 'minimal';
+export type HorizontalAlign = 'left' | 'center' | 'right';
+export type CardPhotoPosition = 'left' | 'right';
+export type CardPhotoShape = 'rect' | 'rounded' | 'circle';
+export type CardQrPlacement = 'front' | 'back' | 'both' | 'none';
+export type CardHeaderStyle = 'solid' | 'gradient' | 'minimal';
+
+export interface DocumentFreeZone {
+  id: string;
+  label: string;
+  text: string;
+  position: 'top' | 'body' | 'bottom';
+  align: HorizontalAlign;
+  enabled: boolean;
+  fontFamily?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  uppercase?: boolean;
+  fontSize?: number;
+  boxed?: boolean;
+  color?: string;
+  offsetX?: number;
+  offsetY?: number;
+}
+
+export interface DocumentLayoutConfig {
+  sectionOrder: CertificateSectionKey[];
+  headerLayout: HeaderLayoutMode;
+  logoSizePx: number;
+  secondaryLogoSizePx: number;
+  showHeaderDivider: boolean;
+  headerDividerColor: string;
+  titleAlign: HorizontalAlign;
+  titleUnderline: boolean;
+  titleUppercase: boolean;
+  titleSizeEm: number;
+  referenceTemplate: string;
+  matriculeLabel: string;
+  signatureAlign: HorizontalAlign;
+  datePhraseTemplate: string;
+  signatureImageHeightPx: number;
+  pagePaddingPx: number;
+  borderWidthPx: number;
+  borderRadiusPx: number;
+  backgroundColor: string;
+  freeZones: DocumentFreeZone[];
+  elementStyles?: Partial<Record<StyledZoneKey, Partial<ElementTypography>>>;
+}
+
 export interface DocumentTemplateRow {
   id: string;
   label: string;
   enabled: boolean;
+}
+
+export interface HeaderLineItem {
+  id: string;
+  label: string;
+  text: string;
+  fontFamily: string;
+  fontSize: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  align: HorizontalAlign;
+  uppercase?: boolean;
+  color?: string;
 }
 
 export interface DocumentTemplate {
@@ -334,6 +442,7 @@ export interface DocumentTemplate {
     line3: string;
     line4: string;
     line5: string;
+    lines?: HeaderLineItem[];
   };
   texts: {
     title: string;
@@ -411,18 +520,33 @@ export interface DocumentTemplate {
     fontFamily: DocumentFontFamily;
     fontSize: number;
   };
+  layout: DocumentLayoutConfig;
   card: {
     /** `fold` : recto et verso côte à côte sur une A4 à plier en 2 · `side` : 2 pages */
     printMode: CardPrintMode;
     showPhoto: boolean;
     photoHint: string;
+    photoPosition: CardPhotoPosition;
+    photoShape: CardPhotoShape;
+    qrPlacement: CardQrPlacement;
+    headerStyle: CardHeaderStyle;
     headerColor: string;
     showValidity: boolean;
     validityYears: number;
     backTitle: string;
     backNote: string;
+    footerText: string;
+    frontFields: string[];
     rounded: boolean;
   };
 }
 
 export type DocumentTemplates = Record<DocumentKind, DocumentTemplate>;
+
+export interface SavedDocumentProfile {
+  id: string;
+  name: string;
+  kind: DocumentKind;
+  updatedAt: string;
+  template: DocumentTemplate;
+}
