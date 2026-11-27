@@ -18,12 +18,14 @@ import {
   X,
 } from 'lucide-react';
 import {
+  buildNiveauFilterOptions,
   enrichInscriptions,
   exportInscriptionsToCsv,
   exportInscriptionsToXlsx,
   formatDateFR,
   getBirthdateAnomalyReason,
   loadCertificateSettings,
+  normalizeNiveauKey,
 } from '../services/database';
 import { EnrichedInscription, ScolariteDatabase } from '../types/scolarite';
 import { BatchReinscriptionModal } from './BatchReinscriptionModal';
@@ -147,20 +149,39 @@ export function AccueilView({
       .sort((a, b) => a.localeCompare(b, 'fr'));
   }, [db.facultes, db.domaines, db.mentions, selectedFaculte, selectedDomaine]);
 
-  const niveauOptions = useMemo(() => db.niveaux.map((n) => n.niveau), [db.niveaux]);
+  // Niveaux présents dans les inscriptions, alias fusionnés ("L1" ≡ "Licence 1")
+  const niveauOptions = useMemo(
+    () => buildNiveauFilterOptions(allEnriched.map((row) => row.niveau)),
+    [allEnriched]
+  );
+
+  const selectedNiveauIds = useMemo(
+    () =>
+      new Set(
+        db.niveaux
+          .filter((n) => normalizeNiveauKey(n.niveau) === selectedNiveau)
+          .map((n) => n.id)
+      ),
+    [db.niveaux, selectedNiveau]
+  );
+
+  const selectedNiveauLabel = useMemo(
+    () =>
+      niveauOptions.find((option) => option.key === selectedNiveau)?.label ?? '',
+    [niveauOptions, selectedNiveau]
+  );
 
   const parcoursOptions = useMemo(() => {
     const menObj = db.mentions.find((m) => m.mention === selectedMention);
-    const nivObj = db.niveaux.find((n) => n.niveau === selectedNiveau);
     return db.parcours
       .filter(
         (p) =>
           (!menObj || p.idMention === menObj.id) &&
-          (!nivObj || p.idNiveau === nivObj.id)
+          (!selectedNiveau || selectedNiveauIds.has(p.idNiveau))
       )
       .map((p) => p.parcours)
       .sort((a, b) => a.localeCompare(b, 'fr'));
-  }, [db.mentions, db.niveaux, db.parcours, selectedMention, selectedNiveau]);
+  }, [db.mentions, db.parcours, selectedMention, selectedNiveau, selectedNiveauIds]);
 
   // Base filtered rows before quick filter (used to compute chip counts)
   const baseFilteredRows = useMemo(() => {
@@ -175,7 +196,7 @@ export function AccueilView({
       if (selectedFaculte && row.faculte !== selectedFaculte) return false;
       if (selectedDomaine && row.domaine !== selectedDomaine) return false;
       if (selectedMention && row.mention !== selectedMention) return false;
-      if (selectedNiveau && row.niveau !== selectedNiveau) return false;
+      if (selectedNiveau && normalizeNiveauKey(row.niveau) !== selectedNiveau) return false;
       if (selectedParcours && row.parcours !== selectedParcours) return false;
 
       if (tokens.length > 0) {
@@ -569,9 +590,9 @@ export function AccueilView({
               className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-md bg-white text-slate-700"
             >
               <option value="">Tous les niveaux</option>
-              {niveauOptions.map((n) => (
-                <option key={n} value={n}>
-                  {n}
+              {niveauOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label} ({option.count})
                 </option>
               ))}
             </select>
@@ -1038,7 +1059,7 @@ export function AccueilView({
                 Année : {effectiveAnnee === 'ALL' ? 'Toutes' : effectiveAnnee}
                 {selectedFaculte ? ` · ${selectedFaculte}` : ''}
                 {selectedMention ? ` · ${selectedMention}` : ''}
-                {selectedNiveau ? ` · ${selectedNiveau}` : ''} — {filteredRows.length} étudiant(s)
+                {selectedNiveau ? ` · ${selectedNiveauLabel}` : ''} — {filteredRows.length} étudiant(s)
               </p>
             </div>
             <span className="text-xs font-mono tabular-nums">

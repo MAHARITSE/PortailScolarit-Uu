@@ -14,9 +14,11 @@ import {
   X,
 } from 'lucide-react';
 import {
+  buildNiveauFilterOptions,
   enrichInscriptions,
   formatDateFR,
   loadCertificateSettings,
+  normalizeNiveauKey,
   saveCertificateSettings,
   verifyCertificateQuery,
 } from '../services/database';
@@ -59,12 +61,29 @@ export function CertificatsView({ db }: CertificatsViewProps) {
 
   const allEnriched = useMemo(() => enrichInscriptions(db), [db]);
 
+  // Niveaux réellement proposés : issus des inscriptions de l'année / mention
+  // sélectionnées, alias fusionnés ("L1" ≡ "Licence 1") et triés.
+  const niveauScope = useMemo(
+    () =>
+      allEnriched.filter((item) => {
+        if (annee !== 'ALL' && item.annee !== annee) return false;
+        if (mention !== 'ALL' && item.mention !== mention) return false;
+        return true;
+      }),
+    [allEnriched, annee, mention]
+  );
+
+  const niveauOptions = useMemo(
+    () => buildNiveauFilterOptions(niveauScope.map((item) => item.niveau)),
+    [niveauScope]
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return allEnriched.filter((item) => {
       if (annee !== 'ALL' && item.annee !== annee) return false;
       if (mention !== 'ALL' && item.mention !== mention) return false;
-      if (niveau !== 'ALL' && item.niveau !== niveau) return false;
+      if (niveau !== 'ALL' && normalizeNiveauKey(item.niveau) !== niveau) return false;
       if (!q) return true;
       return (
         item.nom.toLowerCase().includes(q) ||
@@ -78,6 +97,14 @@ export function CertificatsView({ db }: CertificatsViewProps) {
   useEffect(() => {
     setPage(1);
   }, [search, annee, mention, niveau]);
+
+  // Le niveau choisi n'existe plus dans le périmètre année / mention courant
+  useEffect(() => {
+    if (niveau === 'ALL') return;
+    if (!niveauOptions.some((option) => option.key === niveau)) {
+      setNiveau('ALL');
+    }
+  }, [niveau, niveauOptions]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -319,9 +346,9 @@ export function CertificatsView({ db }: CertificatsViewProps) {
               className="px-3 py-1.5 text-xs border border-slate-300 rounded-md bg-white"
             >
               <option value="ALL">Tous les niveaux</option>
-              {db.niveaux.map((n) => (
-                <option key={n.id} value={n.niveau}>
-                  {n.niveau}
+              {niveauOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label} ({option.count})
                 </option>
               ))}
             </select>

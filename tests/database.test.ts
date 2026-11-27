@@ -6,7 +6,9 @@ import * as XLSX from 'xlsx';
 import {
   auditDatabase,
   batchReinscribe,
+  buildNiveauFilterOptions,
   calculateAge,
+  compareNiveauKeys,
   commitExcelImport,
   computeDashboardStats,
   enrichInscriptions,
@@ -19,6 +21,7 @@ import {
   mergeDuplicateStudents,
   normalizeAllSexCodes,
   normalizeCin,
+  normalizeNiveauKey,
   normalizePhone,
   normalizeSex,
   parseDateToISO,
@@ -60,6 +63,74 @@ describe('Normalisation & Formatage', () => {
     assert.ok(getBirthdateAnomalyReason('2024-01-01', ref)?.includes('jeune'));
     assert.ok(getBirthdateAnomalyReason('2005-02-30', ref)?.includes('invalide'));
     assert.equal(calculateAge('2000-01-01', ref), 26);
+  });
+});
+
+describe('Filtre niveau (Certificats de scolarité)', () => {
+  it('fusionne les alias de niveau (L1, Licence 1, 1ère année Licence)', () => {
+    assert.equal(normalizeNiveauKey('L1'), 'licence 1');
+    assert.equal(normalizeNiveauKey('l1'), 'licence 1');
+    assert.equal(normalizeNiveauKey('Licence 1'), 'licence 1');
+    assert.equal(normalizeNiveauKey('LICENCE  1'), 'licence 1');
+    assert.equal(normalizeNiveauKey('Licence1'), 'licence 1');
+    assert.equal(normalizeNiveauKey('1ère année Licence'), 'licence 1');
+    assert.equal(normalizeNiveauKey('M2'), 'master 2');
+    assert.equal(normalizeNiveauKey('Master 2'), 'master 2');
+    assert.equal(normalizeNiveauKey('D3'), 'doctorat 3');
+    assert.equal(normalizeNiveauKey('Doctorat 3'), 'doctorat 3');
+    assert.equal(normalizeNiveauKey(''), '');
+  });
+
+  it('trie les niveaux dans un ordre lisible (Licence -> Master -> Doctorat)', () => {
+    const sorted = ['L1', 'Master 1', 'Licence 3', 'Doctorat 2']
+      .map((label) => normalizeNiveauKey(label))
+      .sort(compareNiveauKeys);
+    assert.deepEqual(sorted, [
+      'licence 1',
+      'licence 3',
+      'master 1',
+      'doctorat 2',
+    ]);
+  });
+
+  it('ne propose que les niveaux réellement présents, sans doublon d’alias', () => {
+    const options = buildNiveauFilterOptions([
+      'L1',
+      'L1',
+      'Licence 1',
+      'Master 2',
+    ]);
+    assert.deepEqual(
+      options.map((option) => [option.key, option.label, option.count]),
+      [
+        ['licence 1', 'Licence 1', 3],
+        ['master 2', 'Master 2', 1],
+      ]
+    );
+  });
+
+  it('le filtre "Licence 1" retrouve les inscriptions saisies en "L1"', () => {
+    const db = getSeedDatabase();
+    const rows = enrichInscriptions(db);
+    // Le jeu de données contient le niveau "L1" (id 92) et un niveau "Licence 1" (id 5)
+    assert.ok(db.niveaux.some((n) => n.niveau === 'L1'));
+    assert.ok(db.niveaux.some((n) => n.niveau === 'Licence 1'));
+
+    const options = buildNiveauFilterOptions(rows.map((row) => row.niveau));
+    const licence1 = options.find((option) => option.key === 'licence 1');
+    assert.ok(licence1);
+    assert.equal(licence1?.label, 'Licence 1');
+    assert.equal(
+      rows.filter((row) => normalizeNiveauKey(row.niveau) === 'licence 1').length,
+      727
+    );
+    // Aucun niveau mort dans la liste des options
+    for (const option of options) {
+      assert.ok(
+        rows.some((row) => normalizeNiveauKey(row.niveau) === option.key),
+        `niveau sans inscription proposé : ${option.key}`
+      );
+    }
   });
 });
 

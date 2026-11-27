@@ -187,6 +187,136 @@ export function normalizeCin(raw: string | undefined | null): string {
   return (raw ?? '').replace(/\s+/g, '').trim();
 }
 
+const NIVEAU_CYCLES = ['licence', 'master', 'doctorat'] as const;
+type NiveauCycle = (typeof NIVEAU_CYCLES)[number];
+
+const NIVEAU_CYCLE_RANK: Record<NiveauCycle, number> = {
+  licence: 0,
+  master: 1,
+  doctorat: 2,
+};
+
+/**
+ * Clé canonique d'un niveau : "L1", "licence1", "Licence 1" et "1ère année Licence"
+ * donnent tous "licence 1". Les libellés non reconnus sont simplement normalisés.
+ */
+export function normalizeNiveauKey(raw: string | null | undefined): string {
+  const cleaned = (raw ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[._\-/]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+
+  const compact = cleaned.replace(/\s+/g, '');
+  const cycleFor = (prefix: string): NiveauCycle | null => {
+    if (prefix.startsWith('lic') || prefix === 'l') return 'licence';
+    if (prefix.startsWith('mas') || prefix === 'm') return 'master';
+    if (prefix.startsWith('doc') || prefix === 'd') return 'doctorat';
+    return null;
+  };
+  const prefixPattern = '(licence|lic|master|mast|doctorat|doct|doctorant|m|l|d)';
+
+  // "l1", "m2", "d3", "licence1", "master2", ...
+  const shortMatch = compact.match(new RegExp(`^${prefixPattern}(\\d{1,2})$`));
+  if (shortMatch) {
+    const cycle = cycleFor(shortMatch[1]);
+    if (cycle) return `${cycle} ${Number(shortMatch[2])}`;
+  }
+
+  // "1ereanneelicence", "2eanneemaster", ...
+  const yearFirstMatch = compact.match(
+    new RegExp(`^(\\d{1,2})(?:ere|ieme|e|nd|re)?annee(licence|lic|master|mast|doctorat|doct|m|l|d)$`)
+  );
+  if (yearFirstMatch) {
+    const cycle = cycleFor(yearFirstMatch[2]);
+    if (cycle) return `${cycle} ${Number(yearFirstMatch[1])}`;
+  }
+
+  // "licence1ereannee", "master2emeannee", ...
+  const cycleFirstMatch = compact.match(
+    new RegExp(`^${prefixPattern}(\\d{1,2})(?:ere|ieme|e|nd|re)?annee$`)
+  );
+  if (cycleFirstMatch) {
+    const cycle = cycleFor(cycleFirstMatch[1]);
+    if (cycle) return `${cycle} ${Number(cycleFirstMatch[2])}`;
+  }
+
+  return cleaned;
+}
+
+/** Tri lisible des niveaux : Licence 1..3, Master 1..2, Doctorat 1..3, puis alphabétique. */
+export function compareNiveauKeys(a: string, b: string): number {
+  const parse = (key: string) => {
+    const match = key.match(/^(licence|master|doctorat)\s+(\d{1,2})$/);
+    if (!match) return null;
+    return {
+      rank: NIVEAU_CYCLE_RANK[match[1] as NiveauCycle],
+      year: Number(match[2]),
+    };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  if (pa && pb) return pa.rank - pb.rank || pa.year - pb.year;
+  if (pa) return -1;
+  if (pb) return 1;
+  return a.localeCompare(b, 'fr');
+}
+
+export interface NiveauFilterOption {
+  /** Clé canonique utilisée pour le filtrage (ex. "licence 1") */
+  key: string;
+  /** Libellé le plus explicite rencontré (ex. "Licence 1", jamais "L1") */
+  label: string;
+  /** Nombre d'inscriptions concernées */
+  count: number;
+}
+
+/**
+ * Construit la liste des niveaux réellement présents dans un jeu de données,
+ * en fusionnant les alias ("L1" + "Licence 1") et en triant les niveaux.
+ */
+export function buildNiveauFilterOptions(
+  labels: Iterable<string>
+): NiveauFilterOption[] {
+  const groups = new Map<
+    string,
+    { count: number; labels: Map<string, number> }
+  >();
+
+  for (const raw of labels) {
+    const key = normalizeNiveauKey(raw);
+    if (!key) continue;
+    const display = (raw ?? '').trim() || key;
+    const group = groups.get(key) ?? { count: 0, labels: new Map() };
+    group.count += 1;
+    group.labels.set(display, (group.labels.get(display) ?? 0) + 1);
+    groups.set(key, group);
+  }
+
+  return [...groups.entries()]
+    .map(([key, group]) => {
+      const canonical = key.match(/^(licence|master|doctorat) (\d{1,2})$/);
+      if (canonical) {
+        // Libellé officiel lisible, même si la base ne contient que l'alias "L1"
+        const cycle =
+          canonical[1].charAt(0).toUpperCase() + canonical[1].slice(1);
+        return { key, label: `${cycle} ${canonical[2]}`, count: group.count };
+      }
+      const [label] = [...group.labels.entries()].sort(
+        (a, b) => b[0].length - a[0].length || b[1] - a[1]
+      )[0];
+      return {
+        key,
+        label: label.charAt(0).toUpperCase() + label.slice(1),
+        count: group.count,
+      };
+    })
+    .sort((a, b) => compareNiveauKeys(a.key, b.key));
+}
+
 export function formatDateFR(isoOrRaw: string): string {
   if (!isoOrRaw) return '';
   const trimmed = isoOrRaw.trim();
