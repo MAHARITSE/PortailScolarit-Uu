@@ -14,12 +14,14 @@ interface StudentCardPrintSheetsProps {
 }
 
 const PAGE_MM = { width: 210, height: 297 };
-const HALF_MM = PAGE_MM.width / 2;
+/** Largeur réelle d'une carte CR80 (85,6 mm) */
+const CARD_MM = { width: 85.6 };
 
 /**
  * Impression des cartes d'étudiant.
- * - `fold` : recto et verso côte à côte sur une A4, avec trait de pliure au
- *   centre — la feuille est pliée en deux pour obtenir une carte à deux faces.
+ * - `fold` : recto et verso strictement côte à côte (jointifs, centrés sur la
+ *   pliure de la feuille), sans trait de séparation — l'A4 pliée en deux donne
+ *   une carte à deux faces parfaitement superposées.
  * - `side` : recto sur une page, verso sur la suivante.
  */
 export function StudentCardPrintSheets({
@@ -74,31 +76,35 @@ export function StudentCardPrintSheets({
             width: `${PAGE_MM.width}mm`,
             height: `${PAGE_MM.height}mm`,
             display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             margin: '0 auto',
             backgroundColor: '#ffffff',
           }}
         >
-          {(['front', 'back'] as const).map((side, index) => (
-            <div
-              key={side}
-              style={{
-                width: `${HALF_MM}mm`,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '3mm',
-                borderLeft: index === 1 ? '1px dashed #94a3b8' : undefined,
-                position: 'relative',
-              }}
-            >
-              <span className="print:hidden text-[10px] uppercase tracking-widest text-slate-400">
-                {side === 'front' ? 'Recto' : 'Verso'}
-              </span>
-              <StudentCardDocument record={record} template={template} side={side} />
-            </div>
-          ))}
+          {/* Recto et verso strictement côte à côte, centrés sur la pliure */}
+          <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+            {(['front', 'back'] as const).map((side) => (
+              <div
+                key={side}
+                style={{
+                  width: `${CARD_MM.width}mm`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                }}
+              >
+                <StudentCardDocument
+                  record={record}
+                  template={template}
+                  side={side}
+                />
+                <span className="print:hidden mt-1 text-[9px] uppercase tracking-widest text-slate-400">
+                  {side === 'front' ? 'Recto' : 'Verso'}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       ))}
     </div>
