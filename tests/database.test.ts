@@ -8,6 +8,10 @@ import {
   auditDatabase,
   batchReinscribe,
   buildAuditReportCsv,
+  buildCertificateNumber,
+  DEFAULT_CERTIFICATE_PHRASE,
+  buildCertificateQrPayload,
+  buildCertificateVariables,
   buildDocumentQrPayload,
   buildNiveauFilterOptions,
   calculateAge,
@@ -15,7 +19,9 @@ import {
   commitExcelImport,
   computeDashboardStats,
   enrichInscriptions,
+  formatCertificateNumber,
   formatDateFR,
+  formatFieldValue,
   getBirthdateAnomalyReason,
   getDependencyInfo,
   getDocumentRowValue,
@@ -27,6 +33,7 @@ import {
   mergeDocumentTemplate,
   mergeDuplicateStudents,
   loadActiveAnnee,
+  renderCertificateBody,
   normalizeAllSexCodes,
   normalizeCin,
   normalizeNiveauKey,
@@ -170,6 +177,256 @@ describe('Modèles de documents (administration)', () => {
     assert.equal(sample.nom, 'RAKOTO');
     assert.ok(sample.numInscription.length > 0);
     assert.equal(sample.photo, '');
+  });
+});
+
+
+describe('Personnalisation du certificat (champs, corps, QR, impression)', () => {
+  const db = getSeedDatabase();
+  const record = getSampleInscription(db);
+  const tpl = mergeDocumentTemplate('certificat', null);
+
+  it('active dix-huit champs standards dont huit activés par défaut', () => {
+    assert.equal(tpl.fields.length, 18);
+    const enabled = tpl.fields.filter((f) => f.enabled).map((f) => f.id);
+    for (const id of [
+      'nom',
+      'prenom',
+      'dateNaissance',
+      'lieuNaissance',
+      'niveau',
+      'annee',
+      'matricule',
+      'numeroCertificat',
+      'dateDelivrance',
+    ]) {
+      assert.ok(enabled.includes(id), `champ ${id} attendu actif`);
+    }
+    assert.equal(tpl.fields.filter((f) => f.id === 'reference')[0].enabled, false);
+  });
+
+  it('fusionne les champs standards et personnalisés par identifiant', () => {
+    const custom = {
+      ...tpl.fields[0],
+      id: 'numero_table',
+      label: 'Numéro de table',
+      custom: true,
+    };
+    const merged = mergeDocumentTemplate('certificat', {
+      fields: [{ ...tpl.fields[0], label: 'NOM DE FAMILLE', required: true }, custom],
+    } as never);
+    assert.equal(merged.fields.find((f) => f.id === 'nom')?.label, 'NOM DE FAMILLE');
+    assert.equal(merged.fields.find((f) => f.id === 'numero_table')?.custom, true);
+    assert.equal(merged.fields.length, 19);
+  });
+
+  it('formate les valeurs : majuscules, masque et dates', () => {
+    const nom = tpl.fields.find((f) => f.id === 'nom')!;
+    assert.equal(formatFieldValue(nom, 'rakoto jean'), 'RAKOTO JEAN');
+    const cin = { ...nom, uppercase: false, mask: '999 999 999 999', type: 'text' as const };
+    assert.equal(formatFieldValue(cin, '501011012345'), '501 011 012 345');
+    const date = { ...nom, type: 'date' as const, dateFormat: 'JJ/MM/AAAA' as const };
+    assert.equal(formatFieldValue(date, '2003-04-12'), '12/04/2003');
+  });
+
+  it('résout les variables du corps, y compris les champs personnalisés', () => {
+    const withCustom = mergeDocumentTemplate('certificat', {
+      fields: [
+        {
+          ...tpl.fields[0],
+          id: 'numero_table',
+          label: 'Numéro de table',
+          custom: true,
+          uppercase: false,
+        },
+      ],
+    } as never);
+    const sampleCustom: typeof record = {
+      ...record,
+      customValues: { numero_table: 'T-42' },
+    };
+    const vars = buildCertificateVariables(sampleCustom, withCustom);
+    assert.equal(vars.nom, record.nom.toLocaleUpperCase('fr-FR'));
+    assert.equal(vars.numero_table, 'T-42');
+    const body = renderCertificateBody(
+      'Certificat {{numero_certificat}} pour {{nom_complet}} (table {{numero_table}})',
+      vars
+    );
+    assert.ok(body.includes(record.numeroCertificat));
+    assert.ok(body.includes('T-42'));
+    // Une variable inconnue est conservée telle quelle
+    assert.equal(renderCertificateBody('{{inconnue}}', vars), '{{inconnue}}');
+  });
+
+  it('numérote les certificats de façon stable', () => {
+    assert.equal(formatCertificateNumber('2024-2025', '649399', 7), 'CERT/2024-2025/000007-649399');
+    assert.equal(buildCertificateNumber(record), `CERT/${record.annee}/${String(record.idInscription).padStart(6, '0')}-${record.numInscription}`);
+  });
+
+  it('génère un QR URL ou structuré avec jeton', () => {
+    const urlTpl = mergeDocumentTemplate('certificat', {
+      qr: { mode: 'url', urlTemplate: 'https://exemple.mg/verifier?code={{token}}' },
+    } as never);
+    const url = buildCertificateQrPayload(record, urlTpl, { token: 'ABC123' });
+    assert.equal(url, 'https://exemple.mg/verifier?code=ABC123');
+
+    const structured = mergeDocumentTemplate('certificat', { qr: { mode: 'structured' } } as never);
+    const payload = buildCertificateQrPayload(record, structured, { token: 'ABC123' });
+    assert.ok(payload.includes(record.nom));
+    assert.ok(payload.includes('ABC123'));
+
+    const both = mergeDocumentTemplate('certificat', { qr: { mode: 'both' } } as never);
+    const mixed = buildCertificateQrPayload(record, both, { token: 'ABC123' });
+    assert.ok(mixed.includes('https://'));
+    assert.ok(mixed.includes(record.nom));
+  });
+
+  it('conserve les réglages d’impression par défaut', () => {
+    assert.equal(tpl.print.perSheet, 1);
+    assert.equal(tpl.print.orientation, 'portrait');
+    assert.equal(tpl.print.cutLine, true);
+    const twoUp = mergeDocumentTemplate('certificat', {
+      print: { perSheet: 2, twoUpLayout: 'stacked', duplicateSame: false },
+    } as never);
+    assert.equal(twoUp.print.perSheet, 2);
+    assert.equal(twoUp.print.twoUpLayout, 'stacked');
+    assert.equal(twoUp.print.duplicateSame, false);
+  });
+
+  it('retrouve un certificat par son numéro via la vérification QR', () => {
+    const found = verifyCertificateQuery(db, record.numeroCertificat);
+    assert.ok(found);
+  });
+});
+
+
+describe('Certificat rédigé en phrase (sans tableau)', () => {
+  const db = getSeedDatabase();
+  const record = getSampleInscription(db);
+  const tpl = mergeDocumentTemplate('certificat', null);
+
+  it('utilise le mode « phrase » par défaut', () => {
+    assert.equal(tpl.body.mode, 'phrase');
+    assert.ok(tpl.body.template.includes('{{nom_complet}}'));
+    assert.ok(tpl.body.template.includes('{{numero_certificat}}'));
+  });
+
+  it('remplit la phrase type avec les données de l’étudiant', () => {
+    const vars = buildCertificateVariables(record, tpl);
+    const phrase = renderCertificateBody(DEFAULT_CERTIFICATE_PHRASE, vars);
+    assert.ok(phrase.includes(record.nom));
+    assert.ok(phrase.includes(record.prenom));
+    assert.ok(phrase.includes(formatDateFR(record.dateNaissance)) || phrase.includes(record.dateNaissance));
+    assert.ok(phrase.includes(record.annee));
+    assert.ok(phrase.includes(record.numeroCertificat));
+    assert.equal(phrase.includes('{{'), false, 'aucune variable ne doit rester visible');
+  });
+
+  it('accorde le texte au féminin via {{accord_e}}', () => {
+    const female = { ...record, sexe: 'F', sexeNormalized: 'F' } as typeof record;
+    const vars = buildCertificateVariables(female, tpl);
+    assert.equal(vars.accord_e, 'e');
+    const phrase = renderCertificateBody(DEFAULT_CERTIFICATE_PHRASE, vars);
+    assert.ok(phrase.includes('née le'));
+    assert.ok(phrase.includes('inscrite'));
+    assert.equal(phrase.includes('{{'), false);
+  });
+
+  it('conserve le mode tableau si le modèle le précise', () => {
+    const table = mergeDocumentTemplate('certificat', { body: { mode: 'table' } } as never);
+    assert.equal(table.body.mode, 'table');
+    assert.equal(table.body.template, DEFAULT_CERTIFICATE_PHRASE);
+  });
+
+  it('accepte un texte rédigé libre avec les variables de saisie', () => {
+    const custom = mergeDocumentTemplate('certificat', {
+      body: { template: 'Nous certifions que {{nom_complet}} suit les cours en {{classe}}.' },
+      fields: [
+        {
+          ...tpl.fields[0],
+          id: 'numero_table',
+          label: 'Numéro de table',
+          custom: true,
+          uppercase: false,
+        },
+      ],
+    } as never);
+    const phrase = renderCertificateBody(
+      custom.body.template,
+      buildCertificateVariables({ ...record, customValues: { numero_table: 'T-7' } }, custom)
+    );
+    assert.equal(phrase, `Nous certifions que ${record.nom} ${record.prenom} suit les cours en ${record.niveau}.`);
+  });
+});
+
+
+describe('Impression des cartes & choix de la fiche à conserver', () => {
+  it('imprime recto/verso côte à côte par défaut (feuille pliée en 2)', () => {
+    assert.equal(DEFAULT_DOCUMENT_TEMPLATES.carte.card.printMode, 'fold');
+    const side = mergeDocumentTemplate('carte', { card: { printMode: 'side' } } as never);
+    assert.equal(side.card.printMode, 'side');
+    // Les autres réglages de la carte sont conservés
+    const fold = mergeDocumentTemplate('carte', { card: { printMode: 'fold' } } as never);
+    assert.equal(fold.card.showPhoto, DEFAULT_DOCUMENT_TEMPLATES.carte.card.showPhoto);
+  });
+
+  it('fusionne dans la fiche choisie, même s’il ne s’agit pas de la première', () => {
+    const db = getSeedDatabase();
+    const group = auditDatabase(db).duplicateStudents[0];
+    const [first, second] = group.etudiants;
+    const inscriptionsBefore = db.inscriptions.filter(
+      (i) => i.idEtudiant === first.id || i.idEtudiant === second.id
+    ).length;
+
+    // On conserve la SECONDE fiche et on supprime la première
+    const next = mergeDuplicateStudents(db, second.id, first.id);
+    assert.equal(next.etudiants.some((e) => e.id === first.id), false);
+    assert.equal(next.etudiants.some((e) => e.id === second.id), true);
+    const relinked = next.inscriptions.filter((i) => i.idEtudiant === second.id).length;
+    assert.equal(relinked, inscriptionsBefore);
+  });
+
+  it('remplit les champs vides de la fiche conservée', () => {
+    const db = getSeedDatabase();
+    const base = db.etudiants[0];
+    const next = mergeDuplicateStudents(
+      {
+        ...db,
+        etudiants: [
+          { ...base, id: 9001, telephone: '', numeroCin: '' },
+          { ...base, id: 9002, telephone: '034 00 000 00', numeroCin: '123456789012' },
+        ],
+        inscriptions: [],
+      },
+      9001,
+      9002
+    );
+    assert.equal(next.etudiants[0].telephone, '034 00 000 00');
+    assert.equal(next.etudiants[0].numeroCin, '123456789012');
+  });
+});
+
+
+describe('Typographie du corps du certificat', () => {
+  it('fournit un style par défaut', () => {
+    const style = DEFAULT_DOCUMENT_TEMPLATES.certificat.body.style;
+    assert.equal(style.fontFamily, 'sans');
+    assert.equal(style.fontSize, 0);
+    assert.equal(style.align, 'justify');
+    assert.equal(style.bold, false);
+    assert.equal(style.lineHeight, 1.5);
+  });
+
+  it('fusionne partiellement le style enregistré', () => {
+    const merged = mergeDocumentTemplate('certificat', {
+      body: { style: { fontFamily: 'serif', bold: true, align: 'center' } },
+    } as never);
+    assert.equal(merged.body.style.fontFamily, 'serif');
+    assert.equal(merged.body.style.bold, true);
+    assert.equal(merged.body.style.align, 'center');
+    // Les clés non fournies gardent la valeur par défaut
+    assert.equal(merged.body.style.lineHeight, 1.5);
+    assert.equal(merged.body.template, DEFAULT_CERTIFICATE_PHRASE);
   });
 });
 

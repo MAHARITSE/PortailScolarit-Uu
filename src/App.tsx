@@ -310,6 +310,7 @@ export default function App() {
               db={db}
               anneeActive={anneeActive}
               onOpenTemplates={() => setActiveView('administration')}
+              onUpdateDb={handleUpdateDb}
             />
           )}
           {activeView === 'administration' && (

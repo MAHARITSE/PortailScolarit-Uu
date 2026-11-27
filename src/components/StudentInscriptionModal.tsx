@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Check, Plus, RefreshCw, Search, UserPlus, X } from 'lucide-react';
 import {
+  formatCertificateNumber,
   formatDateFR,
+  generateCertificateToken,
   getBirthdateAnomalyReason,
   getNextId,
+  loadDocumentTemplates,
   normalizeCin,
   normalizePhone,
   normalizeSex,
@@ -11,6 +14,7 @@ import {
 import {
   EnrichedInscription,
   Etudiant,
+  FieldDefinition,
   Inscription,
   ScolariteDatabase,
 } from '../types/scolarite';
@@ -80,6 +84,18 @@ export function StudentInscriptionModal({
   const [nomMere, setNomMere] = useState(editing?.nomMere ?? initialStudent?.nomMere ?? '');
 
   const [reference, setReference] = useState(editing?.reference ?? '');
+  const [numeroCertificat, setNumeroCertificat] = useState(
+    editing?.numeroCertificat ?? ''
+  );
+  const [dateDelivrance, setDateDelivrance] = useState(
+    editing?.dateDelivrance ?? ''
+  );
+  const [certificateToken, setCertificateToken] = useState(
+    editing?.certificateToken ?? ''
+  );
+  const [customValues, setCustomValues] = useState<Record<string, string>>(
+    () => ({ ...(editing?.customValues ?? {}) })
+  );
   const [numInscription, setNumInscription] = useState(editing?.numInscription ?? '');
   const [idAnnee, setIdAnnee] = useState<number>(
     editing?.idAnnee ?? defaultAnneeId ?? localDb.annees[0]?.id ?? 0
@@ -100,6 +116,27 @@ export function StudentInscriptionModal({
   const [quickAddValue, setQuickAddValue] = useState('');
   const [quickAddGrade, setQuickAddGrade] = useState('Licence');
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Modèle de certificat défini dans l'administration : pilote les champs du formulaire
+  const certificateFields = useMemo<FieldDefinition[]>(
+    () => loadDocumentTemplates().certificat.fields,
+    []
+  );
+  const customFields = useMemo(
+    () => certificateFields.filter((f) => f.custom && f.enabled),
+    [certificateFields]
+  );
+  const isFieldEnabled = (id: string) => {
+    const def = certificateFields.find((f) => f.id === id);
+    return def ? def.enabled : true;
+  };
+  const requiredField = (id: string) => {
+    const def = certificateFields.find((f) => f.id === id);
+    return Boolean(def?.required);
+  };
+  const setCustomValue = (id: string, value: string) => {
+    setCustomValues((prev) => ({ ...prev, [id]: value }));
+  };
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -123,6 +160,11 @@ export function StudentInscriptionModal({
     setNationalite(stu.nationalite || 'MALAGASY');
     setNomPere(stu.nomPere);
     setNomMere(stu.nomMere);
+
+    const previous = localDb.inscriptions
+      .filter((i) => i.idEtudiant === stu.id)
+      .slice(-1)[0];
+    if (previous?.customValues) setCustomValues({ ...previous.customValues });
 
     // Pre-fill academic branch from most recent inscription if available
     const lastIns = localDb.inscriptions
@@ -321,6 +363,13 @@ export function StudentInscriptionModal({
       setErrorMsg("Le nom de l'étudiant est obligatoire.");
       return;
     }
+    const missingCustom = customFields.find(
+      (f) => f.required && !(customValues[f.id] ?? '').trim()
+    );
+    if (missingCustom) {
+      setErrorMsg(`Le champ « ${missingCustom.label} » est obligatoire.`);
+      return;
+    }
     if (!idAnnee || !effectiveMentionId || !idNiveau) {
       setErrorMsg('Veuillez sélectionner une Année, une Mention et un Niveau.');
       return;
@@ -328,6 +377,20 @@ export function StudentInscriptionModal({
 
     const next = structuredClone(localDb);
     const cleanedPhone = normalizePhone(telephone);
+    const anneeLabel = next.annees.find((a) => a.id === idAnnee)?.annee ?? '';
+    const issueIdentity = (idInscription: number) => {
+      const numero =
+        numeroCertificat.trim() ||
+        formatCertificateNumber(anneeLabel, numInscription.trim(), idInscription);
+      const delivrance = dateDelivrance || new Date().toISOString().slice(0, 10);
+      const token = certificateToken.trim() || generateCertificateToken();
+      return {
+        numeroCertificat: numero,
+        dateDelivrance: delivrance,
+        certificateToken: token,
+        customValues: { ...customValues },
+      };
+    };
 
     if (editing) {
       const etIdx = next.etudiants.findIndex((x) => x.id === editing.idEtudiant);
@@ -350,6 +413,7 @@ export function StudentInscriptionModal({
       }
       const insIdx = next.inscriptions.findIndex((x) => x.id === editing.idInscription);
       if (insIdx !== -1) {
+        const currentInsId = next.inscriptions[insIdx].id;
         next.inscriptions[insIdx] = {
           ...next.inscriptions[insIdx],
           idAnnee,
@@ -358,6 +422,7 @@ export function StudentInscriptionModal({
           idParcours: effectiveParcoursId === '' ? null : Number(effectiveParcoursId),
           numInscription: numInscription.trim(),
           reference: reference.trim(),
+          ...issueIdentity(currentInsId),
         };
       }
       onSave(next, `Fiche de ${nom.trim()} ${prenom.trim()} mise à jour.`);
@@ -383,8 +448,9 @@ export function StudentInscriptionModal({
           nomMere: nomMere.trim(),
         };
       }
+      const reinscriptionId = getNextId(next.inscriptions);
       next.inscriptions.push({
-        id: getNextId(next.inscriptions),
+        id: reinscriptionId,
         idEtudiant: selectedExistingId,
         idAnnee,
         idMention: effectiveMentionId,
@@ -392,6 +458,7 @@ export function StudentInscriptionModal({
         idParcours: effectiveParcoursId === '' ? null : Number(effectiveParcoursId),
         numInscription: numInscription.trim(),
         reference: reference.trim(),
+        ...issueIdentity(reinscriptionId),
       });
       onSave(next, `Réinscription enregistrée pour ${nom.trim()} ${prenom.trim()}.`);
       return;
@@ -415,8 +482,9 @@ export function StudentInscriptionModal({
     };
     next.etudiants.push(newEtudiant);
 
+    const newInscriptionId = getNextId(next.inscriptions);
     const newInscription: Inscription = {
-      id: getNextId(next.inscriptions),
+      id: newInscriptionId,
       idEtudiant: newEtudiantId,
       idAnnee,
       idMention: effectiveMentionId,
@@ -424,6 +492,7 @@ export function StudentInscriptionModal({
       idParcours: effectiveParcoursId === '' ? null : Number(effectiveParcoursId),
       numInscription: numInscription.trim(),
       reference: reference.trim(),
+      ...issueIdentity(newInscriptionId),
     };
     next.inscriptions.push(newInscription);
 
@@ -667,6 +736,8 @@ export function StudentInscriptionModal({
                   <option value="F">F (Féminin)</option>
                 </select>
               </div>
+              {isFieldEnabled('telephone') && (
+                <>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Téléphone</label>
                 <input
@@ -677,6 +748,10 @@ export function StudentInscriptionModal({
                   className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
                 />
               </div>
+                </>
+              )}
+              {isFieldEnabled('numeroCin') && (
+                <>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Numéro CIN</label>
                 <input
@@ -686,6 +761,8 @@ export function StudentInscriptionModal({
                   className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
                 />
               </div>
+                </>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Délivrance CIN</label>
                 <input
@@ -706,6 +783,8 @@ export function StudentInscriptionModal({
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
                 />
               </div>
+              {isFieldEnabled('nationalite') && (
+                <>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Nationalité</label>
                 <input
@@ -715,6 +794,10 @@ export function StudentInscriptionModal({
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
                 />
               </div>
+                </>
+              )}
+              {isFieldEnabled('filiation') && (
+                <>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Nom du père</label>
                 <input
@@ -733,6 +816,8 @@ export function StudentInscriptionModal({
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
                 />
               </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -742,16 +827,23 @@ export function StudentInscriptionModal({
               Inscription académique
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Référence</label>
-                <input
-                  type="text"
-                  value={reference}
-                  onChange={(e) => setReference(e.target.value)}
-                  placeholder="Ex : 969117"
-                  className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
-                />
-              </div>
+              {isFieldEnabled('reference') && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Référence
+                    {requiredField('reference') && (
+                      <span className="text-red-600"> *</span>
+                    )}
+                  </label>
+                  <input
+                    type="text"
+                    value={reference}
+                    onChange={(e) => setReference(e.target.value)}
+                    placeholder="Ex : 969117"
+                    className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
                   Numéro d&apos;inscription
@@ -961,6 +1053,123 @@ export function StudentInscriptionModal({
                   </button>
                 </div>
               </div>
+            )}
+          </div>
+
+          {/* Certificat de scolarité : identité + champs personnalisés du modèle */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-100 pb-1.5">
+              Certificat de scolarité
+            </h3>
+            <p className="text-[11px] text-slate-500">
+              Numéro, date de délivrance et jeton de vérification générés
+              automatiquement — modifiables si nécessaire. Les champs
+              personnalisés proviennent du modèle défini dans
+              Administration&nbsp;·&nbsp;Modèles de documents.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Numéro de certificat
+                </label>
+                <input
+                  type="text"
+                  value={numeroCertificat}
+                  onChange={(e) => setNumeroCertificat(e.target.value)}
+                  placeholder="Généré à l’enregistrement"
+                  className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Date de délivrance
+                </label>
+                <input
+                  type="date"
+                  value={dateDelivrance}
+                  onChange={(e) => setDateDelivrance(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-slate-700">
+                    Jeton de vérification (QR Code)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setCertificateToken(generateCertificateToken())}
+                    className="text-[11px] font-medium text-blue-600 hover:underline inline-flex items-center gap-0.5"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Régénérer
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={certificateToken}
+                  onChange={(e) => setCertificateToken(e.target.value.toUpperCase())}
+                  placeholder="Généré à l’enregistrement (16 caractères)"
+                  className="w-full px-3 py-2 text-sm font-mono tracking-wider border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
+            </div>
+
+            {customFields.length > 0 && (
+              <>
+                <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 pt-1">
+                  Champs personnalisés
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {customFields.map((field) => (
+                    <div
+                      key={field.id}
+                      className={field.fullWidth ? 'sm:col-span-2' : undefined}
+                    >
+                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                        {field.label}
+                        {field.required && <span className="text-red-600"> *</span>}
+                      </label>
+                      {field.type === 'textarea' ? (
+                        <textarea
+                          value={customValues[field.id] ?? ''}
+                          onChange={(e) => setCustomValue(field.id, e.target.value)}
+                          rows={2}
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                        />
+                      ) : field.type === 'select' ? (
+                        <select
+                          value={customValues[field.id] ?? ''}
+                          onChange={(e) => setCustomValue(field.id, e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md bg-white"
+                        >
+                          <option value="">— Sélectionner —</option>
+                          {field.options.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={
+                            field.type === 'date'
+                              ? 'date'
+                              : field.type === 'number'
+                                ? 'number'
+                                : 'text'
+                          }
+                          value={customValues[field.id] ?? ''}
+                          onChange={(e) => setCustomValue(field.id, e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                        />
+                      )}
+                      {field.help && (
+                        <p className="mt-1 text-[11px] text-slate-500">{field.help}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
 

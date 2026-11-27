@@ -6,9 +6,11 @@ import {
   Eye,
   FileBadge,
   LayoutTemplate,
+  Maximize2,
   Printer,
   RotateCcw,
   Save,
+  Type,
   Upload,
 } from 'lucide-react';
 import {
@@ -29,7 +31,12 @@ import {
   ScolariteDatabase,
 } from '../types/scolarite';
 import { CertificateDocument } from './CertificateDocument';
+import { CertificatePageModal } from './CertificatePageModal';
+import { CertificatePrintSheets } from './CertificatePrintSheets';
+import { CertificateTemplateEditor } from './CertificateTemplateEditor';
+import { BodyTypographyControls } from './BodyTypographyControls';
 import { StudentCardDocument } from './StudentCardDocument';
+import { StudentCardPrintSheets } from './StudentCardPrintSheets';
 
 interface AdministrationViewProps {
   db: ScolariteDatabase;
@@ -217,47 +224,66 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
   const [zoom, setZoom] = useState(0.85);
   const [savedAt, setSavedAt] = useState<string>('');
   const [showBack, setShowBack] = useState(true);
+  const [showPrintSheets, setShowPrintSheets] = useState(false);
+  /** Feuille A4 en vue page (comme Word) : en-tête, texte et pied de page éditables */
+  const [pageModalOpen, setPageModalOpen] = useState(false);
   const [importMessage, setImportMessage] = useState<string>('');
   const [printTargets, setPrintTargets] = useState<DocumentKind | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const template = templates[kind];
+  const certificatBodyStyle =
+    templates.certificat.body.style ??
+    DEFAULT_DOCUMENT_TEMPLATES.certificat.body.style;
   const sample = useMemo(() => getSampleInscription(db), [db]);
   const qrPreview = useMemo(
     () => buildDocumentQrPayload(sample, template),
     [sample, template]
   );
 
-  const commit = (nextTemplate: DocumentTemplate) => {
-    const next: DocumentTemplates = {
-      ...templates,
-      [kind]: { ...nextTemplate, updatedAt: new Date().toISOString() },
-    };
-    setTemplates(next);
-    saveDocumentTemplates(next);
-    setSavedAt(
-      new Date().toLocaleTimeString('fr-FR', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-    );
+  const stamp = () =>
+    new Date().toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+  /**
+   * Écrit dans l'état courant (et non dans la valeur capturée par le rendu) :
+   * plusieurs modifications successives (en-tête puis pied de page…) ne
+   * s'écrasent plus entre elles.
+   */
+  const updateTemplate = (
+    mutate: (current: DocumentTemplate) => DocumentTemplate
+  ) => {
+    setTemplates((prev) => {
+      const next: DocumentTemplates = {
+        ...prev,
+        [kind]: { ...mutate(prev[kind]), updatedAt: new Date().toISOString() },
+      };
+      saveDocumentTemplates(next);
+      return next;
+    });
+    setSavedAt(stamp());
   };
 
+  const commit = (nextTemplate: DocumentTemplate) =>
+    updateTemplate(() => nextTemplate);
+
   const patch = (partial: Partial<DocumentTemplate>) =>
-    commit({ ...template, ...partial });
+    updateTemplate((current) => ({ ...current, ...partial }));
 
   const patchSection = <K extends keyof DocumentTemplate>(
     key: K,
     value: Partial<DocumentTemplate[K]>
   ) =>
-    commit({
-      ...template,
+    updateTemplate((current) => ({
+      ...current,
       [key]: {
-        ...(template[key] as Record<string, unknown>),
+        ...(current[key] as Record<string, unknown>),
         ...(value as Record<string, unknown>),
       },
-    });
+    }));
 
   const handleReset = () => {
     commit(resetDocumentTemplate(kind));
@@ -394,7 +420,7 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
               {
                 key: 'certificat' as DocumentKind,
                 label: 'Certificat de scolarité',
-                hint: 'A4 portrait',
+                hint: 'A4 · 1 ou 2 par feuille',
                 icon: FileBadge,
               },
               {
@@ -435,6 +461,16 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)] gap-5 items-start">
           {/* Panneau de réglages */}
           <div className="space-y-4">
+            {kind === 'certificat' && (
+              <CertificateTemplateEditor
+                db={db}
+                template={template}
+                patch={patch}
+                patchSection={patchSection}
+              />
+            )}
+
+            {kind === 'carte' && (
             <Section
               title="En-tête & logos"
               description="Lignes institutionnelles affichées en haut du document"
@@ -491,29 +527,27 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 onChange={(v) => patchSection('header', { line5: v })}
               />
             </Section>
+            )}
 
+            {kind === 'carte' && (
             <Section title="Textes du document">
               <TextField
                 label="Titre"
                 value={template.texts.title}
                 onChange={(v) => patchSection('texts', { title: v })}
               />
-              {kind === 'certificat' && (
-                <>
-                  <TextAreaField
-                    label="Phrase d’introduction"
-                    value={template.texts.intro}
-                    onChange={(v) => patchSection('texts', { intro: v })}
-                    rows={2}
-                  />
-                  <TextAreaField
-                    label="Formule de clôture"
-                    value={template.texts.closing}
-                    onChange={(v) => patchSection('texts', { closing: v })}
-                    rows={2}
-                  />
-                </>
-              )}
+              <TextAreaField
+                label="Phrase d’introduction"
+                value={template.texts.intro}
+                onChange={(v) => patchSection('texts', { intro: v })}
+                rows={2}
+              />
+              <TextAreaField
+                label="Formule de clôture"
+                value={template.texts.closing}
+                onChange={(v) => patchSection('texts', { closing: v })}
+                rows={2}
+              />
               <TextAreaField
                 label="Mention légale"
                 value={template.texts.legalMention}
@@ -521,6 +555,7 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 rows={2}
               />
             </Section>
+            )}
 
             <Section
               title="Blocs affichés"
@@ -568,6 +603,7 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
               )}
             </Section>
 
+            {kind === 'carte' && (
             <Section
               title="Champs & tableau"
               description="Lignes affichées (tableau du certificat, verso de la carte)"
@@ -600,7 +636,9 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 </div>
               ))}
             </Section>
+            )}
 
+            {kind === 'carte' && (
             <Section title="QR code de vérification">
               <label className="block">
                 <span className="block text-[11px] font-medium text-slate-600 mb-1">
@@ -643,7 +681,9 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 {qrPreview}
               </pre>
             </Section>
+            )}
 
+            {kind === 'carte' && (
             <Section title="Signature">
               <TextField
                 label="Fonction du signataire"
@@ -672,6 +712,7 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 restent prioritaires si elles sont remplies.
               </p>
             </Section>
+            )}
 
             <Section title="Apparence">
               <div className="grid grid-cols-2 gap-2">
@@ -705,24 +746,26 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                     <option value="double">Double</option>
                   </select>
                 </label>
-                <label className="block">
-                  <span className="block text-[11px] font-medium text-slate-600 mb-1">
-                    Police
-                  </span>
-                  <select
-                    value={template.appearance.fontFamily}
-                    onChange={(e) =>
-                      patchSection('appearance', {
-                        fontFamily: e.target.value as DocumentFontFamily,
-                      })
-                    }
-                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
-                  >
-                    <option value="sans">Sans serif</option>
-                    <option value="display">Titres (display)</option>
-                    <option value="mono">Monospace</option>
-                  </select>
-                </label>
+                {kind === 'carte' && (
+                  <label className="block">
+                    <span className="block text-[11px] font-medium text-slate-600 mb-1">
+                      Police
+                    </span>
+                    <select
+                      value={template.appearance.fontFamily}
+                      onChange={(e) =>
+                        patchSection('appearance', {
+                          fontFamily: e.target.value as DocumentFontFamily,
+                        })
+                      }
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                    >
+                      <option value="sans">Sans serif</option>
+                      <option value="display">Titres (display)</option>
+                      <option value="mono">Monospace</option>
+                    </select>
+                  </label>
+                )}
               </div>
               <label className="block">
                 <span className="block text-[11px] font-medium text-slate-600 mb-1">
@@ -748,6 +791,28 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 title="Carte étudiant"
                 description="Format CR80 · recto / verso"
               >
+                <label className="block">
+                  <span className="block text-[11px] font-medium text-slate-600 mb-1">
+                    Impression recto / verso
+                  </span>
+                  <select
+                    value={template.card.printMode}
+                    onChange={(e) =>
+                      patchSection('card', {
+                        printMode: e.target.value === 'side' ? 'side' : 'fold',
+                      })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                  >
+                    <option value="fold">Côte à côte (feuille pliée en 2)</option>
+                    <option value="side">Recto puis verso (2 pages)</option>
+                  </select>
+                  <span className="block text-[10.5px] text-slate-500 mt-1">
+                    {template.card.printMode === 'fold'
+                      ? 'Recto à gauche, verso à droite : imprimez en taille réelle (100 %) puis pliez la feuille au centre.'
+                      : 'Le recto et le verso sont imprimés sur deux pages distinctes.'}
+                  </span>
+                </label>
                 <Toggle
                   label="Afficher la photo de l’étudiant"
                   checked={template.card.showPhoto}
@@ -820,6 +885,31 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {kind === 'certificat' && (
+                    <button
+                      type="button"
+                      onClick={() => setPageModalOpen(true)}
+                      className="px-2.5 py-1.5 text-[11px] font-semibold text-white bg-slate-800 rounded hover:bg-slate-900 inline-flex items-center gap-1"
+                    >
+                      <Maximize2 className="w-3 h-3" /> Ouvrir la feuille
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintSheets((v) => !v)}
+                      className={`px-2.5 py-1.5 text-[11px] font-medium rounded border inline-flex items-center gap-1 ${
+                        showPrintSheets
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Printer className="w-3 h-3" />
+                      {showPrintSheets
+                        ? kind === 'carte'
+                          ? 'Voir la carte'
+                          : 'Voir le certificat'
+                      : 'Feuille A4'}
+                  </button>
                   {kind === 'carte' && (
                     <Toggle
                       label="Verso"
@@ -853,13 +943,51 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                 </div>
               </div>
 
+              {kind === 'certificat' && (
+                <div className="px-4 py-2.5 border-b border-slate-200 bg-slate-50/80 space-y-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <p className="text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1.5">
+                      <Type className="w-3.5 h-3.5 text-blue-600" />
+                      Police &amp; caractère
+                    </p>
+                    <span className="text-[10.5px] text-slate-500">
+                      S’appliquent à l’en-tête et au texte du certificat
+                    </span>
+                  </div>
+                  <BodyTypographyControls
+                    value={certificatBodyStyle}
+                    compact
+                    onChange={(stylePatch) =>
+                      patchSection('body', {
+                        style: { ...certificatBodyStyle, ...stylePatch },
+                      })
+                    }
+                  />
+                </div>
+              )}
+
               <div className="p-4 bg-slate-100/70 overflow-auto max-h-[70vh]">
                 <div
-                  style={{ zoom }}
+                  style={{
+                    zoom: showPrintSheets ? zoom * (kind === 'carte' ? 0.32 : 0.45) : zoom,
+                  }}
                   className="mx-auto w-fit"
                 >
                   {kind === 'certificat' ? (
-                    <CertificateDocument record={sample} template={template} />
+                    showPrintSheets ? (
+                      <CertificatePrintSheets records={[sample]} template={template} />
+                    ) : (
+                      <CertificateDocument
+                        record={sample}
+                        template={template}
+                        token={sample.certificateToken}
+                      />
+                    )
+                  ) : showPrintSheets ? (
+                    <StudentCardPrintSheets
+                      records={[sample]}
+                      template={template}
+                    />
                   ) : (
                     <StudentCardDocument
                       record={sample}
@@ -884,25 +1012,24 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
       {/* Impression plein format */}
       {printTargets === 'certificat' && (
         <div className="hidden print:block">
-          <CertificateDocument record={sample} template={templates.certificat} />
+          <CertificatePrintSheets
+            records={[sample]}
+            template={templates.certificat}
+          />
         </div>
+      )}
+      {pageModalOpen && kind === 'certificat' && (
+        <CertificatePageModal
+          template={templates.certificat}
+          record={sample}
+          patchSection={(key, value) => patchSection(key, value)}
+          onPrint={() => triggerPrint('certificat')}
+          onClose={() => setPageModalOpen(false)}
+        />
       )}
       {printTargets === 'carte' && (
         <div className="hidden print:block">
-          <div className="print-page-break">
-            <StudentCardDocument
-              record={sample}
-              template={templates.carte}
-              side="front"
-            />
-          </div>
-          <div className="print-page-break">
-            <StudentCardDocument
-              record={sample}
-              template={templates.carte}
-              side="back"
-            />
-          </div>
+          <StudentCardPrintSheets records={[sample]} template={templates.carte} />
         </div>
       )}
     </div>
