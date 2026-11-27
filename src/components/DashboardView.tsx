@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  CalendarRange,
   CheckCircle2,
   GitMerge,
   Pencil,
@@ -27,24 +28,24 @@ import { StudentInscriptionModal } from './StudentInscriptionModal';
 
 interface DashboardViewProps {
   db: ScolariteDatabase;
+  /** Année universitaire de travail (une seule à la fois) */
+  anneeActive: string;
   onUpdateDb: (nextDb: ScolariteDatabase, toastMessage?: string) => void;
   onJumpToStudents: (filter: QuickFilterMode) => void;
 }
 
 export function DashboardView({
   db,
+  anneeActive,
   onUpdateDb,
   onJumpToStudents,
 }: DashboardViewProps) {
-  const [selectedAnnee, setSelectedAnnee] = useState<string>(
-    db.annees[0]?.annee ?? 'ALL'
-  );
   const [editingAnomalyRow, setEditingAnomalyRow] =
     useState<EnrichedInscription | null>(null);
 
   const stats = useMemo(
-    () => computeDashboardStats(db, selectedAnnee),
-    [db, selectedAnnee]
+    () => computeDashboardStats(db, anneeActive),
+    [db, anneeActive]
   );
   const audit = useMemo(() => auditDatabase(db), [db]);
   const allEnriched = useMemo(() => enrichInscriptions(db), [db]);
@@ -107,22 +108,11 @@ export function DashboardView({
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <label className="text-xs font-medium text-slate-600">
-            Périmètre :
-          </label>
-          <select
-            value={selectedAnnee}
-            onChange={(e) => setSelectedAnnee(e.target.value)}
-            className="px-3 py-1.5 text-xs border border-slate-300 rounded-md bg-white text-slate-800 font-medium"
-          >
-            <option value="ALL">Toutes les années</option>
-            {db.annees.map((a) => (
-              <option key={a.id} value={a.annee}>
-                Année {a.annee}
-              </option>
-            ))}
-          </select>
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-md">
+          <CalendarRange className="w-3.5 h-3.5 text-blue-700" />
+          <span className="text-xs font-medium text-blue-900">
+            Année universitaire {anneeActive || '—'}
+          </span>
         </div>
       </div>
 

@@ -19,6 +19,7 @@ import {
 
 const STORAGE_KEY = 'portail_scolarite_uu_db_v1';
 const CERT_SETTINGS_KEY = 'portail_scolarite_uu_cert_settings_v1';
+const ACTIVE_ANNEE_KEY = 'portail_scolarite_uu_active_annee_v1';
 
 export const DEFAULT_CERTIFICATE_SETTINGS: CertificateSettings = {
   issueDate: '',
@@ -92,6 +93,51 @@ export function getDatabaseStorageSizeKB(db: ScolariteDatabase): number {
     return Math.round(bytes / 1024);
   } catch {
     return Math.round(JSON.stringify(db).length / 1024);
+  }
+}
+
+/** Année de début d'un libellé "2024-2025" (0 si non reconnue). */
+export function anneeStartYear(label: string | null | undefined): number {
+  const match = String(label ?? '').match(/(\d{4})/);
+  return match ? Number(match[1]) : 0;
+}
+
+/** Trie les années universitaires de la plus récente à la plus ancienne. */
+export function sortAnneesDesc<T extends { annee: string }>(annees: T[]): T[] {
+  return [...annees].sort(
+    (a, b) =>
+      anneeStartYear(b.annee) - anneeStartYear(a.annee) ||
+      b.annee.localeCompare(a.annee, 'fr')
+  );
+}
+
+/** Année universitaire la plus récente du référentiel ("dernière année"). */
+export function getLatestAnneeLabel(annees: { annee: string }[]): string {
+  return sortAnneesDesc(annees)[0]?.annee ?? '';
+}
+
+/**
+ * Année universitaire de travail : une seule année à la fois, par défaut la
+ * plus récente. Le choix de l'utilisateur est mémorisé localement.
+ */
+export function loadActiveAnnee(annees: { annee: string }[]): string {
+  const latest = getLatestAnneeLabel(annees);
+  try {
+    if (typeof localStorage === 'undefined') return latest;
+    const stored = localStorage.getItem(ACTIVE_ANNEE_KEY);
+    if (stored && annees.some((a) => a.annee === stored)) return stored;
+  } catch {
+    // ignore storage errors
+  }
+  return latest;
+}
+
+export function saveActiveAnnee(annee: string): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(ACTIVE_ANNEE_KEY, annee);
+  } catch {
+    // ignore preference persistence errors
   }
 }
 

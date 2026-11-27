@@ -15,10 +15,12 @@ import {
   formatDateFR,
   getBirthdateAnomalyReason,
   getDependencyInfo,
+  getLatestAnneeLabel,
   getSeedDatabase,
   getWorkbookSheetNames,
   importDatabaseJson,
   mergeDuplicateStudents,
+  loadActiveAnnee,
   normalizeAllSexCodes,
   normalizeCin,
   normalizeNiveauKey,
@@ -26,6 +28,7 @@ import {
   normalizeSex,
   parseDateToISO,
   parseExcelWorkbook,
+  sortAnneesDesc,
   verifyCertificateQuery,
 } from '../src/services/database';
 
@@ -63,6 +66,43 @@ describe('Normalisation & Formatage', () => {
     assert.ok(getBirthdateAnomalyReason('2024-01-01', ref)?.includes('jeune'));
     assert.ok(getBirthdateAnomalyReason('2005-02-30', ref)?.includes('invalide'));
     assert.equal(calculateAge('2000-01-01', ref), 26);
+  });
+});
+
+describe('Année universitaire de travail', () => {
+  it('choisit par défaut l’année la plus récente, quel que soit l’ordre du référentiel', () => {
+    const db = getSeedDatabase();
+    assert.equal(getLatestAnneeLabel(db.annees), '2024-2025');
+    assert.equal(
+      getLatestAnneeLabel([
+        { annee: '2019-2020' },
+        { annee: '2025-2026' },
+        { annee: '2021-2022' },
+      ]),
+      '2025-2026'
+    );
+    assert.equal(getLatestAnneeLabel([]), '');
+  });
+
+  it('trie les années de la plus récente à la plus ancienne', () => {
+    const sorted = sortAnneesDesc([
+      { id: 1, annee: '2021-2022' },
+      { id: 2, annee: '2024-2025' },
+      { id: 3, annee: '2019-2020' },
+    ]).map((a) => a.annee);
+    assert.deepEqual(sorted, ['2024-2025', '2021-2022', '2019-2020']);
+  });
+
+  it('démarre sur la dernière année et ignore une préférence obsolète', () => {
+    const db = getSeedDatabase();
+    assert.equal(loadActiveAnnee(db.annees), '2024-2025');
+  });
+
+  it('les inscriptions d’une année sont bien cloisonnées', () => {
+    const db = getSeedDatabase();
+    const rows = enrichInscriptions(db);
+    assert.equal(rows.filter((r) => r.annee === '2024-2025').length, 727);
+    assert.equal(rows.filter((r) => r.annee === '2023-2024').length, 0);
   });
 });
 
