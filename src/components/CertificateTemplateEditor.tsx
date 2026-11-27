@@ -12,7 +12,6 @@ import {
   Users,
 } from 'lucide-react';
 import { BODY_FONT_CLASS } from './typography';
-import { BodyTypographyControls } from './BodyTypographyControls';
 import {
   CERTIFICATE_VARIABLES,
   DEFAULT_CERTIFICATE_PHRASE,
@@ -294,22 +293,6 @@ export function CertificateTemplateEditor({
           >
             <RotateCcw className="w-3 h-3" /> Phrase type
           </button>
-        </div>
-
-        <div className="p-3 border border-slate-200 rounded-md bg-slate-50/70 space-y-2">
-          <p className="text-[11px] font-semibold text-slate-700">
-            Police &amp; caractère du texte
-          </p>
-          <BodyTypographyControls
-            value={bodyStyle}
-            onChange={(stylePatch) =>
-              patchSection('body', { style: { ...bodyStyle, ...stylePatch } })
-            }
-          />
-          <p className="text-[10.5px] text-slate-500">
-            Taille 0 = taille héritée du document. Ces réglages s’appliquent au
-            texte du certificat à l’écran et à l’impression.
-          </p>
         </div>
 
         <div>
