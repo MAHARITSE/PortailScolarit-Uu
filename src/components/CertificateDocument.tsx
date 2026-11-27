@@ -11,12 +11,12 @@ import {
   renderCertificateBody,
 } from '../services/database';
 import {
-  BodyFontFamily,
   CertificateSettings,
   DocumentTemplate,
   EnrichedInscription,
 } from '../types/scolarite';
 import { QrCodeCanvas } from './QrCodeCanvas';
+import { BODY_FONT_CLASS } from './typography';
 
 interface CertificateDocumentProps {
   record: EnrichedInscription;
@@ -31,13 +31,6 @@ interface CertificateDocumentProps {
   /** Jeton forcé (certificat en cours d'émission) */
   token?: string;
 }
-
-const BODY_FONT_CLASS: Record<BodyFontFamily, string> = {
-  sans: 'font-sans',
-  serif: 'font-serif',
-  display: 'font-display',
-  mono: 'font-mono',
-};
 
 const FONT_CLASS: Record<DocumentTemplate['appearance']['fontFamily'], string> = {
   sans: 'font-sans',
@@ -376,7 +369,8 @@ export function CertificateDocument({
           </div>
         )}
 
-        {texts.closing && (
+        {/* En mode phrase, le texte rédigé contient déjà la formule de clôture */}
+        {!phraseMode && texts.closing && (
           <p className="text-[0.88em] text-slate-700 pt-1">{texts.closing}</p>
         )}
       </div>

@@ -11,6 +11,8 @@ import {
   Upload,
   Users,
 } from 'lucide-react';
+import { BODY_FONT_CLASS } from './typography';
+import { BodyTypographyControls } from './BodyTypographyControls';
 import {
   CERTIFICATE_VARIABLES,
   DEFAULT_CERTIFICATE_PHRASE,
@@ -24,8 +26,6 @@ import {
   renderCertificateBody,
 } from '../services/database';
 import {
-  BodyFontFamily,
-  BodyTextAlign,
   CertificateTokenEntry,
   DocumentTemplate,
   QrContentMode,
@@ -127,13 +127,6 @@ function Switch({
     </label>
   );
 }
-
-const BODY_FONT_CLASS: Record<BodyFontFamily, string> = {
-  sans: 'font-sans',
-  serif: 'font-serif',
-  display: 'font-display',
-  mono: 'font-mono',
-};
 
 const QR_MODES: { value: QrContentMode; label: string }[] = [
   { value: 'url', label: 'URL de vérification unique' },
@@ -303,119 +296,20 @@ export function CertificateTemplateEditor({
           </button>
         </div>
 
-        <div className="p-3 border border-slate-200 rounded-md bg-slate-50/70 space-y-2.5">
-          <p className="text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1.5">
-            <Type className="w-3.5 h-3.5 text-blue-600" /> Police & caractère
+        <div className="p-3 border border-slate-200 rounded-md bg-slate-50/70 space-y-2">
+          <p className="text-[11px] font-semibold text-slate-700">
+            Police &amp; caractère du texte
           </p>
-
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Police">
-              <select
-                value={bodyStyle.fontFamily}
-                onChange={(e) =>
-                  patchSection('body', {
-                    style: {
-                      ...bodyStyle,
-                      fontFamily: e.target.value as BodyFontFamily,
-                    },
-                  })
-                }
-                className={inputClass}
-              >
-                <option value="sans">Sans serif</option>
-                <option value="serif">Serif</option>
-                <option value="display">Display (titres)</option>
-                <option value="mono">Monospace</option>
-              </select>
-            </Field>
-            <Field label="Taille du texte (px)">
-              <input
-                type="number"
-                min={0}
-                max={32}
-                value={bodyStyle.fontSize}
-                onChange={(e) =>
-                  patchSection('body', {
-                    style: {
-                      ...bodyStyle,
-                      fontSize: Math.max(0, Math.min(32, Number(e.target.value) || 0)),
-                    },
-                  })
-                }
-                placeholder="Auto"
-                className={`${inputClass} font-mono`}
-              />
-            </Field>
-            <Field label="Alignement">
-              <select
-                value={bodyStyle.align}
-                onChange={(e) =>
-                  patchSection('body', {
-                    style: {
-                      ...bodyStyle,
-                      align: e.target.value as BodyTextAlign,
-                    },
-                  })
-                }
-                className={inputClass}
-              >
-                <option value="justify">Justifié</option>
-                <option value="left">Gauche</option>
-                <option value="center">Centré</option>
-              </select>
-            </Field>
-            <Field label="Interligne">
-              <select
-                value={String(bodyStyle.lineHeight)}
-                onChange={(e) =>
-                  patchSection('body', {
-                    style: { ...bodyStyle, lineHeight: Number(e.target.value) },
-                  })
-                }
-                className={inputClass}
-              >
-                <option value="1.2">Serré (1,2)</option>
-                <option value="1.5">Normal (1,5)</option>
-                <option value="1.8">Aéré (1,8)</option>
-                <option value="2">Double (2)</option>
-              </select>
-            </Field>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(
-              [
-                ['bold', 'Gras', 'font-bold'],
-                ['italic', 'Italique', 'italic'],
-                ['underline', 'Souligné', 'underline'],
-                ['uppercase', 'MAJUSCULES', 'uppercase'],
-              ] as const
-            ).map(([key, label, className]) => {
-              const active = Boolean(bodyStyle[key]);
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() =>
-                    patchSection('body', {
-                      style: { ...bodyStyle, [key]: !active },
-                    })
-                  }
-                  className={`px-2.5 py-1 text-[11px] rounded border ${className} ${
-                    active
-                      ? 'bg-blue-600 border-blue-600 text-white'
-                      : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-            <span className="text-[10.5px] text-slate-500 ml-auto">
-              Taille 0 = héritée du document
-            </span>
-          </div>
+          <BodyTypographyControls
+            value={bodyStyle}
+            onChange={(stylePatch) =>
+              patchSection('body', { style: { ...bodyStyle, ...stylePatch } })
+            }
+          />
+          <p className="text-[10.5px] text-slate-500">
+            Taille 0 = taille héritée du document. Ces réglages s’appliquent au
+            texte du certificat à l’écran et à l’impression.
+          </p>
         </div>
 
         <div>

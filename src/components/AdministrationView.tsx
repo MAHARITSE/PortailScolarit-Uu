@@ -9,6 +9,7 @@ import {
   Printer,
   RotateCcw,
   Save,
+  Type,
   Upload,
 } from 'lucide-react';
 import {
@@ -31,6 +32,7 @@ import {
 import { CertificateDocument } from './CertificateDocument';
 import { CertificatePrintSheets } from './CertificatePrintSheets';
 import { CertificateTemplateEditor } from './CertificateTemplateEditor';
+import { BodyTypographyControls } from './BodyTypographyControls';
 import { StudentCardDocument } from './StudentCardDocument';
 import { StudentCardPrintSheets } from './StudentCardPrintSheets';
 
@@ -226,6 +228,9 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const template = templates[kind];
+  const certificatBodyStyle =
+    templates.certificat.body.style ??
+    DEFAULT_DOCUMENT_TEMPLATES.certificat.body.style;
   const sample = useMemo(() => getSampleInscription(db), [db]);
   const qrPreview = useMemo(
     () => buildDocumentQrPayload(sample, template),
@@ -909,6 +914,29 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                   </button>
                 </div>
               </div>
+
+              {kind === 'certificat' && (
+                <div className="px-4 py-2.5 border-b border-slate-200 bg-slate-50/80 space-y-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <p className="text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1.5">
+                      <Type className="w-3.5 h-3.5 text-blue-600" />
+                      Police &amp; caractère du texte
+                    </p>
+                    <span className="text-[10.5px] text-slate-500">
+                      Appliqué directement au certificat ci-dessous
+                    </span>
+                  </div>
+                  <BodyTypographyControls
+                    value={certificatBodyStyle}
+                    compact
+                    onChange={(stylePatch) =>
+                      patchSection('body', {
+                        style: { ...certificatBodyStyle, ...stylePatch },
+                      })
+                    }
+                  />
+                </div>
+              )}
 
               <div className="p-4 bg-slate-100/70 overflow-auto max-h-[70vh]">
                 <div
