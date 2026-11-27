@@ -15,6 +15,7 @@ interface CertificatePrintSheetsProps {
 const PAGE_MM = { width: 210, height: 297 };
 const MM_TO_PX = 3.7795275591;
 const DESIGN_WIDTH_PX = 794;
+const DESIGN_HEIGHT_PX = 1123;
 
 /**
  * Pages d'impression A4 : 1 certificat par feuille, ou 2 (A5) côte à côte /
@@ -68,7 +69,12 @@ export function CertificatePrintSheets({
   const stacked = twoUp && print.twoUpLayout === 'stacked';
   const cellWidthMm = twoUp && !stacked ? usableW / 2 : usableW;
   const cellHeightMm = twoUp && stacked ? usableH / 2 : usableH;
-  const zoom = Math.min(1, (cellWidthMm * MM_TO_PX) / DESIGN_WIDTH_PX);
+  // Le certificat doit tenir dans la cellule en largeur ET en hauteur
+  const zoom = Math.min(
+    1,
+    (cellWidthMm * MM_TO_PX) / DESIGN_WIDTH_PX,
+    (cellHeightMm * MM_TO_PX) / DESIGN_HEIGHT_PX
+  );
 
   return (
     <div className="certificate-sheets">
