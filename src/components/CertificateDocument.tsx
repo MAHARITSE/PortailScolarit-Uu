@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CERTIFICATE_PHRASE,
   DEFAULT_DOCUMENT_TEMPLATES,
   buildCertificateQrPayload,
   buildCertificateVariables,
@@ -75,7 +76,20 @@ export function CertificateDocument({
     numeroCertificat: record.numeroCertificat,
     dateDelivrance: record.dateDelivrance,
   });
+  // Mode « phrase rédigée » (par défaut) : le certificat est un texte suivi,
+  // complété automatiquement avec les données — aucun tableau.
+  const phraseMode = (tpl.body.mode ?? 'phrase') !== 'table';
   const renderedBody = renderCertificateBody(tpl.body.template, variables);
+  const bodyText = (
+    renderedBody.trim() ||
+    (phraseMode
+      ? renderCertificateBody(DEFAULT_CERTIFICATE_PHRASE, variables)
+      : '')
+  ).trim();
+  const bodyParagraphs = bodyText
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
 
   const activeFields = tpl.fields.filter((field) => field.enabled);
   const activeRows = tpl.rows.filter((row) => row.enabled);
@@ -246,14 +260,18 @@ export function CertificateDocument({
       <div className="space-y-4 leading-relaxed text-slate-800">
         {blocks.identity && (
           <>
-            {texts.intro && !renderedBody && <p>{texts.intro}</p>}
-            {renderedBody ? (
-              <div className="whitespace-pre-line text-[0.98em]">
-                {renderedBody}
+            {!phraseMode && texts.intro && <p>{texts.intro}</p>}
+            {bodyParagraphs.length > 0 && (
+              <div className="space-y-3 text-[0.98em] text-justify">
+                {bodyParagraphs.map((paragraph, index) => (
+                  <p key={`para-${index}`} className="whitespace-pre-line">
+                    {paragraph}
+                  </p>
+                ))}
               </div>
-            ) : null}
+            )}
 
-            {activeFields.length > 0 && (
+            {!phraseMode && activeFields.length > 0 && (
               <div className="border border-slate-300 divide-y divide-slate-200 text-[0.92em]">
                 {activeFields.map((field, index) => {
                   const value = getCertificateFieldValue(record, field, {
@@ -293,6 +311,7 @@ export function CertificateDocument({
               </div>
             )}
 
+            {!phraseMode && (
             <p className="font-medium text-slate-900 text-[0.95em]">
               {isFemale
                 ? "Est inscrite régulièrement au sein de l'Université de Toliara pour l'Année Universitaire"
@@ -302,11 +321,12 @@ export function CertificateDocument({
               </span>{' '}
               :
             </p>
+            )}
           </>
         )}
 
-        {/* Tableau académique */}
-        {blocks.academicTable && activeRows.length > 0 && (
+        {/* Tableau académique (uniquement en mode tableau) */}
+        {!phraseMode && blocks.academicTable && activeRows.length > 0 && (
           <div className="border border-slate-300 divide-y divide-slate-200 text-[0.92em]">
             {activeRows.map((row, index) => (
               <div

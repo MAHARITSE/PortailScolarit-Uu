@@ -916,6 +916,7 @@ export const STANDARD_FIELD_DEFINITIONS: FieldDefinition[] = [
 /** Variables insérables dans le corps du certificat. */
 export const CERTIFICATE_VARIABLES: { key: string; label: string }[] = [
   { key: 'civilite', label: 'Civilité' },
+  { key: 'accord_e', label: 'Accord féminin (« e »)' },
   { key: 'nom', label: 'Nom' },
   { key: 'prenom', label: 'Prénom(s)' },
   { key: 'nom_complet', label: 'Nom complet' },
@@ -928,8 +929,24 @@ export const CERTIFICATE_VARIABLES: { key: string; label: string }[] = [
   { key: 'numero_certificat', label: 'N° de certificat' },
   { key: 'date_delivrance', label: 'Date de délivrance' },
   { key: 'faculte', label: 'Établissement' },
+  { key: 'signataire_titre', label: 'Titre du signataire' },
+  { key: 'signataire_nom', label: 'Nom du signataire' },
+  { key: 'lieu_signature', label: 'Lieu de signature' },
   { key: 'token', label: 'Jeton de vérification' },
 ];
+
+/**
+ * Phrase type du certificat : le texte est complété automatiquement avec les
+ * données de l'étudiant (aucun tableau).
+ */
+export const DEFAULT_CERTIFICATE_PHRASE =
+  'Je soussigné(e), {{signataire_titre}}, certifie que {{civilite}} {{nom_complet}}, ' +
+  'né{{accord_e}} le {{date_naissance}} à {{lieu_naissance}}, est régulièrement ' +
+  'inscrit{{accord_e}} en {{classe}} — mention {{mention}} — au titre de l’année ' +
+  'universitaire {{annee_scolaire}}, sous le matricule {{matricule}}.\n\n' +
+  'Le présent certificat est délivré à l’intéressé{{accord_e}} pour servir et valoir ' +
+  'ce que de droit.\n\n' +
+  'Certificat n° {{numero_certificat}}, délivré le {{date_delivrance}}.';
 
 export const QR_PIXEL_SIZES: Record<QrSize, number> = {
   small: 72,
@@ -1040,6 +1057,10 @@ export function buildCertificateVariables(
     numero_certificat: numero,
     date_delivrance: formatDateFR(delivrance),
     faculte: record.faculte,
+    accord_e: isFemale ? 'e' : '',
+    signataire_titre: template.signature.title,
+    signataire_nom: template.signature.name,
+    lieu_signature: template.signature.place,
     domaine: record.domaine,
     filiere: record.mention,
     token: extra.token ?? record.certificateToken,
@@ -1059,8 +1080,9 @@ export function renderCertificateBody(
   variables: Record<string, string>
 ): string {
   return (bodyTemplate ?? '').replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (match, key) => {
-    const value = variables[key];
-    return value === undefined || value === '' ? match : value;
+    // Une variable connue mais vide est remplacée par une chaîne vide
+    // (ex. {{accord_e}} = '' au masculin) ; une variable inconnue est conservée.
+    return key in variables ? variables[key] : match;
   });
 }
 
@@ -1300,6 +1322,7 @@ function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
     },
     body: {
       template: '',
+      mode: 'phrase',
     },
     fields: STANDARD_FIELD_DEFINITIONS.map((field) => ({ ...field })),
     blocks: {
@@ -1367,11 +1390,8 @@ export const DEFAULT_DOCUMENT_TEMPLATES: DocumentTemplates = {
   certificat: {
     ...baseDocumentTemplate('certificat'),
     body: {
-      template:
-        '{{civilite}} {{nom}} {{prenom}}, né(e) le {{date_naissance}} à {{lieu_naissance}},\n' +
-        'est inscrit(e) régulièrement au sein de l’Université de Toliara pour l’année universitaire\n' +
-        '{{annee_scolaire}}, en classe de {{classe}}, mention {{mention}}.\n\n' +
-        'Numéro de certificat : {{numero_certificat}} — délivré le {{date_delivrance}}.',
+      template: DEFAULT_CERTIFICATE_PHRASE,
+      mode: 'phrase',
     },
     qr: {
       ...baseDocumentTemplate('certificat').qr,

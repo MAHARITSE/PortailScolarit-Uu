@@ -222,6 +222,9 @@ export type DocumentKind = 'certificat' | 'carte';
 /* ----------------------------- Champs de saisie ------------------------------ */
 
 export type FieldInputType = 'text' | 'textarea' | 'date' | 'number' | 'select';
+
+/** Présentation du corps du certificat : phrase rédigée ou tableau. */
+export type CertificateBodyMode = 'phrase' | 'table';
 export type FieldDateFormat = 'JJ/MM/AAAA' | 'AAAA-MM-JJ';
 
 export interface FieldDefinition {
@@ -335,6 +338,11 @@ export interface DocumentTemplate {
   /** Corps du texte avec variables {{...}} */
   body: {
     template: string;
+    /**
+     * `phrase` : certificat rédigé sous forme de phrase à compléter (aucun
+     * tableau de données) · `table` : champs présentés en tableau.
+     */
+    mode: CertificateBodyMode;
   };
   /** Champs affichés sur le certificat / saisis dans le formulaire */
   fields: FieldDefinition[];

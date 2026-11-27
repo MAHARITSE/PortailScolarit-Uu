@@ -9,6 +9,7 @@ import {
   batchReinscribe,
   buildAuditReportCsv,
   buildCertificateNumber,
+  DEFAULT_CERTIFICATE_PHRASE,
   buildCertificateQrPayload,
   buildCertificateVariables,
   buildDocumentQrPayload,
@@ -295,6 +296,66 @@ describe('Personnalisation du certificat (champs, corps, QR, impression)', () =>
   it('retrouve un certificat par son numéro via la vérification QR', () => {
     const found = verifyCertificateQuery(db, record.numeroCertificat);
     assert.ok(found);
+  });
+});
+
+
+describe('Certificat rédigé en phrase (sans tableau)', () => {
+  const db = getSeedDatabase();
+  const record = getSampleInscription(db);
+  const tpl = mergeDocumentTemplate('certificat', null);
+
+  it('utilise le mode « phrase » par défaut', () => {
+    assert.equal(tpl.body.mode, 'phrase');
+    assert.ok(tpl.body.template.includes('{{nom_complet}}'));
+    assert.ok(tpl.body.template.includes('{{numero_certificat}}'));
+  });
+
+  it('remplit la phrase type avec les données de l’étudiant', () => {
+    const vars = buildCertificateVariables(record, tpl);
+    const phrase = renderCertificateBody(DEFAULT_CERTIFICATE_PHRASE, vars);
+    assert.ok(phrase.includes(record.nom));
+    assert.ok(phrase.includes(record.prenom));
+    assert.ok(phrase.includes(formatDateFR(record.dateNaissance)) || phrase.includes(record.dateNaissance));
+    assert.ok(phrase.includes(record.annee));
+    assert.ok(phrase.includes(record.numeroCertificat));
+    assert.equal(phrase.includes('{{'), false, 'aucune variable ne doit rester visible');
+  });
+
+  it('accorde le texte au féminin via {{accord_e}}', () => {
+    const female = { ...record, sexe: 'F', sexeNormalized: 'F' } as typeof record;
+    const vars = buildCertificateVariables(female, tpl);
+    assert.equal(vars.accord_e, 'e');
+    const phrase = renderCertificateBody(DEFAULT_CERTIFICATE_PHRASE, vars);
+    assert.ok(phrase.includes('née le'));
+    assert.ok(phrase.includes('inscrite'));
+    assert.equal(phrase.includes('{{'), false);
+  });
+
+  it('conserve le mode tableau si le modèle le précise', () => {
+    const table = mergeDocumentTemplate('certificat', { body: { mode: 'table' } } as never);
+    assert.equal(table.body.mode, 'table');
+    assert.equal(table.body.template, DEFAULT_CERTIFICATE_PHRASE);
+  });
+
+  it('accepte un texte rédigé libre avec les variables de saisie', () => {
+    const custom = mergeDocumentTemplate('certificat', {
+      body: { template: 'Nous certifions que {{nom_complet}} suit les cours en {{classe}}.' },
+      fields: [
+        {
+          ...tpl.fields[0],
+          id: 'numero_table',
+          label: 'Numéro de table',
+          custom: true,
+          uppercase: false,
+        },
+      ],
+    } as never);
+    const phrase = renderCertificateBody(
+      custom.body.template,
+      buildCertificateVariables({ ...record, customValues: { numero_table: 'T-7' } }, custom)
+    );
+    assert.equal(phrase, `Nous certifions que ${record.nom} ${record.prenom} suit les cours en ${record.niveau}.`);
   });
 });
 

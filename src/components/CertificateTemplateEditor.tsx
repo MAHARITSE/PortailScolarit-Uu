@@ -5,8 +5,10 @@ import {
   ChevronDown,
   ChevronUp,
   Image as ImageIcon,
+  PenLine,
   Plus,
   QrCode,
+  RotateCcw,
   Trash2,
   Type,
   Upload,
@@ -14,11 +16,14 @@ import {
 } from 'lucide-react';
 import {
   CERTIFICATE_VARIABLES,
+  DEFAULT_CERTIFICATE_PHRASE,
   QR_PIXEL_SIZES,
+  buildCertificateVariables,
   buildCertificateQrPayload,
   clearCertificateRegistry,
   getSampleInscription,
   loadCertificateRegistry,
+  renderCertificateBody,
 } from '../services/database';
 import {
   CertificateTokenEntry,
@@ -296,12 +301,101 @@ export function CertificateTemplateEditor({
 
   return (
     <div className="space-y-3">
-      {/* 1 · Champs du formulaire ------------------------------------------- */}
+      {/* 1 · Rédaction : phrase à compléter -------------------------------- */}
       <EditorSection
-        title="Champs du formulaire & du certificat"
+        title="Rédaction du certificat (phrase à compléter)"
+        description="Écrivez la phrase, insérez les données : le texte est rempli automatiquement"
+        icon={<PenLine className="w-4 h-4" />}
+        defaultOpen
+      >
+        <Field label="Présentation du corps">
+          <select
+            value={template.body.mode ?? 'phrase'}
+            onChange={(e) =>
+              patchSection('body', {
+                mode: e.target.value === 'table' ? 'table' : 'phrase',
+              })
+            }
+            className={inputClass}
+          >
+            <option value="phrase">Phrase rédigée (aucun tableau)</option>
+            <option value="table">Tableau de données</option>
+          </select>
+        </Field>
+
+        {template.body.mode === 'table' ? (
+          <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+            Mode tableau : les champs activés sont présentés dans un tableau sur le
+            certificat. Repassez en « Phrase rédigée » pour un texte suivi.
+          </p>
+        ) : (
+          <p className="text-[11px] text-slate-500">
+            Le texte est rédigé une seule fois et complété avec les données de chaque
+            étudiant. Séparez les paragraphes par une ligne vide.
+          </p>
+        )}
+
+        <div className="flex flex-wrap gap-1.5">
+          {variables.map((v) => (
+            <button
+              key={v.key}
+              type="button"
+              onClick={() => insertVariable(v.key)}
+              title={v.label}
+              className="px-2 py-0.5 text-[11px] font-mono bg-blue-50 text-blue-800 border border-blue-200 rounded hover:bg-blue-100"
+            >
+              {`{{${v.key}}}`}
+            </button>
+          ))}
+        </div>
+
+        <textarea
+          ref={bodyRef}
+          rows={9}
+          value={template.body.template}
+          placeholder={DEFAULT_CERTIFICATE_PHRASE}
+          onChange={(e) => patchSection('body', { template: e.target.value })}
+          className="w-full px-2.5 py-2 text-xs border border-slate-300 rounded bg-white font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+        />
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-slate-500">
+            {template.body.template.trim().length} caractères
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              patchSection('body', { template: DEFAULT_CERTIFICATE_PHRASE, mode: 'phrase' })
+            }
+            className="px-2.5 py-1.5 text-[11px] font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 inline-flex items-center gap-1"
+          >
+            <RotateCcw className="w-3 h-3" /> Phrase type
+          </button>
+        </div>
+
+        <div>
+          <p className="text-[11px] font-medium text-slate-600 mb-1">
+            Rendu pour {sample.nom} {sample.prenom}
+          </p>
+          <div className="border border-slate-200 rounded bg-slate-50 p-3 text-[11.5px] leading-relaxed text-justify text-slate-800 space-y-2">
+            {renderCertificateBody(
+              template.body.template.trim() || DEFAULT_CERTIFICATE_PHRASE,
+              buildCertificateVariables(sample, template)
+            )
+              .split(/\n{2,}/)
+              .map((paragraph, index) => (
+                <p key={`rendu-${index}`} className="whitespace-pre-line">
+                  {paragraph.trim()}
+                </p>
+              ))}
+          </div>
+        </div>
+      </EditorSection>
+
+      {/* 2 · Champs du formulaire ------------------------------------------- */}
+      <EditorSection
+        title="Champs du formulaire de saisie"
         description="Activez, renommez et ordonnez les champs · ajoutez des champs personnalisés"
         icon={<Type className="w-4 h-4" />}
-        defaultOpen
       >
         <div className="space-y-2">
           {template.fields.map((field, index) => {
@@ -524,32 +618,12 @@ export function CertificateTemplateEditor({
         </div>
       </EditorSection>
 
-      {/* 2 · Corps du document ---------------------------------------------- */}
+      {/* 3 · Titres & mentions ---------------------------------------------- */}
       <EditorSection
-        title="Corps du certificat (variables)"
-        description="Cliquez sur une variable pour l’insérer dans le texte"
+        title="Titres & mentions"
+        description="Titre du document, intro, formule de clôture et mention légale"
         icon={<Type className="w-4 h-4" />}
       >
-        <div className="flex flex-wrap gap-1.5">
-          {variables.map((v) => (
-            <button
-              key={v.key}
-              type="button"
-              onClick={() => insertVariable(v.key)}
-              title={v.label}
-              className="px-2 py-0.5 text-[11px] font-mono bg-blue-50 text-blue-800 border border-blue-200 rounded hover:bg-blue-100"
-            >
-              {`{{${v.key}}}`}
-            </button>
-          ))}
-        </div>
-        <textarea
-          ref={bodyRef}
-          rows={8}
-          value={template.body.template}
-          onChange={(e) => patchSection('body', { template: e.target.value })}
-          className="w-full px-2.5 py-2 text-xs border border-slate-300 rounded bg-white font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-        />
         <Field label="Titre du document">
           <input
             type="text"
@@ -568,7 +642,7 @@ export function CertificateTemplateEditor({
         </Field>
       </EditorSection>
 
-      {/* 3 · En-tête & pied de page ----------------------------------------- */}
+      {/* 4 · En-tête & pied de page ----------------------------------------- */}
       <EditorSection
         title="En-tête & pied de page"
         description="Établissement, devise, logo, adresse et coordonnées"
@@ -698,7 +772,7 @@ export function CertificateTemplateEditor({
         </div>
       </EditorSection>
 
-      {/* 4 · Signature -------------------------------------------------------- */}
+      {/* 5 · Signature -------------------------------------------------------- */}
       <EditorSection
         title="Signature & cachet"
         description="Lieu, qualité du signataire et image de signature"
@@ -789,7 +863,7 @@ export function CertificateTemplateEditor({
         </Field>
       </EditorSection>
 
-      {/* 5 · QR code ---------------------------------------------------------- */}
+      {/* 6 · QR code ---------------------------------------------------------- */}
       <EditorSection
         title="QR code de vérification"
         description="Contenu, position, taille et jeton unique par certificat"
@@ -903,7 +977,7 @@ export function CertificateTemplateEditor({
         </div>
       </EditorSection>
 
-      {/* 6 · Impression ------------------------------------------------------- */}
+      {/* 7 · Impression ------------------------------------------------------- */}
       <EditorSection
         title="Mise en page d’impression"
         description="1 ou 2 certificats par feuille A4, marges et ligne de découpe"
@@ -986,7 +1060,7 @@ export function CertificateTemplateEditor({
         </p>
       </EditorSection>
 
-      {/* 7 · Historique ------------------------------------------------------- */}
+      {/* 8 · Historique ------------------------------------------------------- */}
       <EditorSection
         title={`Certificats émis (${registry.length})`}
         description="Jetons et numéros enregistrés dans ce navigateur"
