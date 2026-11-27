@@ -132,20 +132,52 @@ export function CertificatePageModal({
     window.setTimeout(() => setSaved(false), 1200);
   };
 
-  const commitHeader = () => {
-    patchSection('header', lines);
-    flashSaved();
+  // Valeurs courantes + écritures différées : l'en-tête s'applique pendant la
+  // frappe (et non seulement à la sortie du champ).
+  const latest = useRef({ lines, footer, bodyText });
+  latest.current = { lines, footer, bodyText };
+  const dirty = useRef({ header: false, footer: false, body: false });
+  const timer = useRef<number | null>(null);
+  const patchRef = useRef(patchSection);
+  patchRef.current = patchSection;
+  const flashRef = useRef(() => {});
+  flashRef.current = flashSaved;
+
+  /** Écrit immédiatement toutes les modifications en attente. */
+  const flush = () => {
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+    const patch = patchRef.current;
+    const pending = dirty.current;
+    const hasChange = pending.header || pending.footer || pending.body;
+    if (pending.header) {
+      pending.header = false;
+      patch('header', latest.current.lines);
+    }
+    if (pending.footer) {
+      pending.footer = false;
+      patch('footer', latest.current.footer);
+    }
+    if (pending.body) {
+      pending.body = false;
+      patch('body', { template: latest.current.bodyText });
+    }
+    if (hasChange) flashRef.current();
   };
 
-  const commitFooter = () => {
-    patchSection('footer', footer);
-    flashSaved();
+  const schedule = (which: 'header' | 'footer' | 'body') => {
+    dirty.current[which] = true;
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      flush();
+    }, 300);
   };
 
-  const commitBody = () => {
-    patchSection('body', { template: bodyText });
-    flashSaved();
-  };
+  // Ne rien perdre si la feuille est fermée pendant la saisie
+  useEffect(() => () => flush(), []);
 
   const setStyle = (stylePatch: Partial<typeof bodyStyle>) => {
     patchSection('body', { style: { ...bodyStyle, ...stylePatch } });
@@ -222,14 +254,20 @@ export function CertificatePageModal({
           </span>
           <button
             type="button"
-            onClick={onPrint}
+            onClick={() => {
+              flush();
+              onPrint();
+            }}
             className="px-2.5 py-1 text-[11px] font-semibold text-[#2b579a] bg-white rounded hover:bg-blue-50 inline-flex items-center gap-1"
           >
             <Printer className="w-3 h-3" /> Imprimer
           </button>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              flush();
+              onClose();
+            }}
             aria-label="Fermer la feuille"
             className="p-1 rounded hover:bg-white/15"
           >
@@ -706,32 +744,44 @@ export function CertificatePageModal({
                   <div className="flex-1 min-w-0 space-y-0.5">
                     <input
                       value={lines.line1}
-                      onChange={(e) => setLines({ ...lines, line1: e.target.value })}
-                      onBlur={commitHeader}
+                      onChange={(e) => {
+                        setLines({ ...lines, line1: e.target.value });
+                        schedule('header');
+                      }}
+                      onBlur={flush}
                       placeholder="République · devise"
                       aria-label="En-tête ligne 1"
                       className={`${headerInputClass} text-[0.72em] font-semibold uppercase tracking-wider text-slate-700`}
                     />
                     <input
                       value={lines.line2}
-                      onChange={(e) => setLines({ ...lines, line2: e.target.value })}
-                      onBlur={commitHeader}
+                      onChange={(e) => {
+                        setLines({ ...lines, line2: e.target.value });
+                        schedule('header');
+                      }}
+                      onBlur={flush}
                       placeholder="Devise"
                       aria-label="En-tête ligne 2"
                       className={`${headerInputClass} text-[0.68em] italic text-slate-500`}
                     />
                     <input
                       value={lines.line3}
-                      onChange={(e) => setLines({ ...lines, line3: e.target.value })}
-                      onBlur={commitHeader}
+                      onChange={(e) => {
+                        setLines({ ...lines, line3: e.target.value });
+                        schedule('header');
+                      }}
+                      onBlur={flush}
                       placeholder="Ministère"
                       aria-label="En-tête ligne 3"
                       className={`${headerInputClass} text-[0.78em] font-semibold uppercase text-slate-800 pt-1`}
                     />
                     <input
                       value={lines.line4}
-                      onChange={(e) => setLines({ ...lines, line4: e.target.value })}
-                      onBlur={commitHeader}
+                      onChange={(e) => {
+                        setLines({ ...lines, line4: e.target.value });
+                        schedule('header');
+                      }}
+                      onBlur={flush}
                       placeholder="Université"
                       aria-label="En-tête ligne 4"
                       className={`${headerInputClass} text-[1.3em] font-bold uppercase tracking-tight`}
@@ -739,8 +789,11 @@ export function CertificatePageModal({
                     />
                     <input
                       value={lines.line5}
-                      onChange={(e) => setLines({ ...lines, line5: e.target.value })}
-                      onBlur={commitHeader}
+                      onChange={(e) => {
+                        setLines({ ...lines, line5: e.target.value });
+                        schedule('header');
+                      }}
+                      onBlur={flush}
                       placeholder="Direction / service"
                       aria-label="En-tête ligne 5"
                       className={`${headerInputClass} text-[0.78em] font-medium text-slate-700`}
@@ -762,8 +815,11 @@ export function CertificatePageModal({
                     <textarea
                       data-page-body
                       value={bodyText}
-                      onChange={(e) => setBodyText(e.target.value)}
-                      onBlur={commitBody}
+                      onChange={(e) => {
+                        setBodyText(e.target.value);
+                        schedule('body');
+                      }}
+                      onBlur={flush}
                       rows={16}
                       aria-label="Texte du certificat"
                       className="w-full border border-blue-200 rounded p-3 text-[13px] leading-relaxed font-mono outline-none focus:ring-2 focus:ring-blue-400/30 resize-y"
@@ -776,7 +832,7 @@ export function CertificatePageModal({
                       <button
                         type="button"
                         onClick={() => {
-                          commitBody();
+                          flush();
                           setEditingBody(false);
                         }}
                         className="px-2.5 py-1.5 text-[11px] font-semibold text-white bg-[#2b579a] rounded hover:bg-[#24497f]"
@@ -817,24 +873,33 @@ export function CertificatePageModal({
                   </label>
                   <input
                     value={footer.address}
-                    onChange={(e) => setFooter({ ...footer, address: e.target.value })}
-                    onBlur={commitFooter}
+                    onChange={(e) => {
+                      setFooter({ ...footer, address: e.target.value });
+                      schedule('footer');
+                    }}
+                    onBlur={flush}
                     placeholder="Adresse de l’établissement"
                     aria-label="Adresse du pied de page"
                     className="w-full bg-transparent text-[10.5px] text-slate-600 outline-none rounded px-1 py-0.5 hover:bg-blue-50/70 focus:bg-blue-50 focus:ring-1 focus:ring-blue-300"
                   />
                   <input
                     value={footer.contacts}
-                    onChange={(e) => setFooter({ ...footer, contacts: e.target.value })}
-                    onBlur={commitFooter}
+                    onChange={(e) => {
+                      setFooter({ ...footer, contacts: e.target.value });
+                      schedule('footer');
+                    }}
+                    onBlur={flush}
                     placeholder="Téléphone · e-mail · site"
                     aria-label="Coordonnées du pied de page"
                     className="w-full bg-transparent text-[10.5px] text-slate-600 outline-none rounded px-1 py-0.5 hover:bg-blue-50/70 focus:bg-blue-50 focus:ring-1 focus:ring-blue-300"
                   />
                   <input
                     value={footer.note}
-                    onChange={(e) => setFooter({ ...footer, note: e.target.value })}
-                    onBlur={commitFooter}
+                    onChange={(e) => {
+                      setFooter({ ...footer, note: e.target.value });
+                      schedule('footer');
+                    }}
+                    onBlur={flush}
                     placeholder="Note de bas de page"
                     aria-label="Note du pied de page"
                     className="w-full bg-transparent text-[10.5px] text-slate-500 outline-none rounded px-1 py-0.5 hover:bg-blue-50/70 focus:bg-blue-50 focus:ring-1 focus:ring-blue-300"

@@ -241,36 +241,49 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
     [sample, template]
   );
 
-  const commit = (nextTemplate: DocumentTemplate) => {
-    const next: DocumentTemplates = {
-      ...templates,
-      [kind]: { ...nextTemplate, updatedAt: new Date().toISOString() },
-    };
-    setTemplates(next);
-    saveDocumentTemplates(next);
-    setSavedAt(
-      new Date().toLocaleTimeString('fr-FR', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-    );
+  const stamp = () =>
+    new Date().toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+  /**
+   * Écrit dans l'état courant (et non dans la valeur capturée par le rendu) :
+   * plusieurs modifications successives (en-tête puis pied de page…) ne
+   * s'écrasent plus entre elles.
+   */
+  const updateTemplate = (
+    mutate: (current: DocumentTemplate) => DocumentTemplate
+  ) => {
+    setTemplates((prev) => {
+      const next: DocumentTemplates = {
+        ...prev,
+        [kind]: { ...mutate(prev[kind]), updatedAt: new Date().toISOString() },
+      };
+      saveDocumentTemplates(next);
+      return next;
+    });
+    setSavedAt(stamp());
   };
 
+  const commit = (nextTemplate: DocumentTemplate) =>
+    updateTemplate(() => nextTemplate);
+
   const patch = (partial: Partial<DocumentTemplate>) =>
-    commit({ ...template, ...partial });
+    updateTemplate((current) => ({ ...current, ...partial }));
 
   const patchSection = <K extends keyof DocumentTemplate>(
     key: K,
     value: Partial<DocumentTemplate[K]>
   ) =>
-    commit({
-      ...template,
+    updateTemplate((current) => ({
+      ...current,
       [key]: {
-        ...(template[key] as Record<string, unknown>),
+        ...(current[key] as Record<string, unknown>),
         ...(value as Record<string, unknown>),
       },
-    });
+    }));
 
   const handleReset = () => {
     commit(resetDocumentTemplate(kind));
