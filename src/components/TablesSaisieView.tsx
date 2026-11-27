@@ -11,7 +11,6 @@ import {
   Search,
   ShieldAlert,
   Trash2,
-  UserCheck,
   X,
 } from 'lucide-react';
 import {
@@ -22,6 +21,7 @@ import {
   getNextId,
   normalizePhone,
   normalizeSex,
+  suggestNextAnneeLabel,
   syncCertificateRegistryForInscription,
 } from '../services/database';
 import { ScolariteDatabase, TableEntityKey } from '../types/scolarite';
@@ -29,7 +29,7 @@ import { ScolariteDatabase, TableEntityKey } from '../types/scolarite';
 interface TablesSaisieViewProps {
   db: ScolariteDatabase;
   onUpdateDb: (nextDb: ScolariteDatabase, toastMessage?: string) => void;
-  onOpenYearPointer?: (mode: 'create' | 'populate', targetAnnee?: string) => void;
+  onOpenCreateYear?: () => void;
 }
 
 const TABLE_TABS: { key: TableEntityKey; label: string }[] = [
@@ -82,7 +82,7 @@ async function compressLogoFile(file: File): Promise<string> {
 export function TablesSaisieView({
   db,
   onUpdateDb,
-  onOpenYearPointer,
+  onOpenCreateYear,
 }: TablesSaisieViewProps) {
   const [activeTable, setActiveTable] = useState<TableEntityKey>('annees');
   const [search, setSearch] = useState('');
@@ -179,16 +179,23 @@ export function TablesSaisieView({
     () => new Map(db.niveaux.map((n) => [n.id, n.niveau])),
     [db.niveaux]
   );
+  const anneeInscriptionCounts = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const ins of db.inscriptions) {
+      map.set(ins.idAnnee, (map.get(ins.idAnnee) ?? 0) + 1);
+    }
+    return map;
+  }, [db.inscriptions]);
 
   const openCreate = () => {
-    if (activeTable === 'annees' && onOpenYearPointer) {
-      onOpenYearPointer('create');
+    if (activeTable === 'annees' && onOpenCreateYear) {
+      onOpenCreateYear();
       return;
     }
     setIsCreating(true);
     setStudentPickerQuery('');
     const defaults: Record<TableEntityKey, Record<string, unknown>> = {
-      annees: { annee: '2025-2026' },
+      annees: { annee: suggestNextAnneeLabel(db.annees) },
       facultes: {
         faculte: '',
         logo: '/assets/logo-uu.jpg',
@@ -542,10 +549,12 @@ export function TablesSaisieView({
                   let detail = '';
 
                   switch (activeTable) {
-                    case 'annees':
+                    case 'annees': {
+                      const insCount = anneeInscriptionCounts.get(id) ?? 0;
                       primary = String(row.annee ?? '');
-                      detail = 'Année universitaire';
+                      detail = `Année universitaire · ${insCount} inscription(s)`;
                       break;
+                    }
                     case 'facultes':
                       primary = String(row.faculte ?? '');
                       detail = row.logo
@@ -591,22 +600,6 @@ export function TablesSaisieView({
                       <td className="py-2.5 px-4 text-slate-600">{detail}</td>
                       <td className="py-2.5 px-4 text-right no-print">
                         <div className="inline-flex items-center gap-1">
-                          {activeTable === 'annees' && onOpenYearPointer && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onOpenYearPointer(
-                                  'populate',
-                                  String(row.annee ?? '')
-                                )
-                              }
-                              className="px-2 py-1 text-[11px] font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded inline-flex items-center gap-1 mr-1"
-                              title="Pointer des étudiants depuis la dernière année"
-                            >
-                              <UserCheck className="w-3 h-3" />
-                              Pointer étudiants
-                            </button>
-                          )}
                           <button
                             type="button"
                             onClick={() => openEdit(row)}

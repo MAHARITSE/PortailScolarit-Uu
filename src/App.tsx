@@ -18,7 +18,7 @@ import { AdministrationView } from './components/AdministrationView';
 import { CertificatsView } from './components/CertificatsView';
 import { DashboardView } from './components/DashboardView';
 import { ImportationView } from './components/ImportationView';
-import { NewYearReinscriptionModal } from './components/NewYearReinscriptionModal';
+import { NewAcademicYearModal } from './components/NewAcademicYearModal';
 import { SauvegardeView } from './components/SauvegardeView';
 import { TablesSaisieView } from './components/TablesSaisieView';
 import { ToastContainer, ToastItem } from './components/Toast';
@@ -58,10 +58,7 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [pendingQuickFilter, setPendingQuickFilter] =
     useState<QuickFilterMode>('all');
-  const [yearPointerModal, setYearPointerModal] = useState<{
-    mode: 'create' | 'populate';
-    targetAnnee?: string;
-  } | null>(null);
+  const [newYearModalOpen, setNewYearModalOpen] = useState<boolean>(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const toastCounter = useRef(1);
 
@@ -271,8 +268,8 @@ export default function App() {
               </select>
               <button
                 type="button"
-                onClick={() => setYearPointerModal({ mode: 'create' })}
-                title="Ajouter une année universitaire et pointer des étudiants depuis la dernière année"
+                onClick={() => setNewYearModalOpen(true)}
+                title="Créer une nouvelle année universitaire"
                 className="ml-0.5 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 bg-blue-100/80 hover:bg-blue-200/80 rounded inline-flex items-center gap-1 transition-colors"
               >
                 <Plus className="w-3 h-3" />
@@ -310,9 +307,6 @@ export default function App() {
               onUpdateDb={handleUpdateDb}
               initialQuickFilter={pendingQuickFilter}
               onClearInitialFilter={() => setPendingQuickFilter('all')}
-              onOpenYearPointer={(mode, targetAnnee) =>
-                setYearPointerModal({ mode, targetAnnee })
-              }
             />
           )}
           {activeView === 'dashboard' && (
@@ -345,9 +339,7 @@ export default function App() {
             <TablesSaisieView
               db={db}
               onUpdateDb={handleUpdateDb}
-              onOpenYearPointer={(mode, targetAnnee) =>
-                setYearPointerModal({ mode, targetAnnee })
-              }
+              onOpenCreateYear={() => setNewYearModalOpen(true)}
             />
           )}
           {activeView === 'sauvegarde' && (
@@ -356,30 +348,24 @@ export default function App() {
         </main>
       </div>
 
-      {yearPointerModal && (
-        <NewYearReinscriptionModal
+      {newYearModalOpen && (
+        <NewAcademicYearModal
           db={db}
-          mode={yearPointerModal.mode}
-          initialTargetAnnee={yearPointerModal.targetAnnee}
-          onClose={() => setYearPointerModal(null)}
-          onConfirm={(nextDb, targetAnneeLabel, createdCount, skippedCount, isNewYear) => {
-            const parts: string[] = [];
-            if (isNewYear) {
-              parts.push(`Année ${targetAnneeLabel} créée`);
-            }
-            if (createdCount > 0) {
-              parts.push(
-                `${createdCount} étudiant(s) ajouté(s) en ${targetAnneeLabel}`
+          onClose={() => setNewYearModalOpen(false)}
+          onConfirm={(nextDb, targetAnneeLabel, created) => {
+            if (created) {
+              handleUpdateDb(
+                nextDb,
+                `Année universitaire ${targetAnneeLabel} créée et activée.`
               );
-            } else if (!isNewYear) {
-              parts.push(`Aucun nouvel étudiant ajouté en ${targetAnneeLabel}`);
+            } else {
+              pushToast(
+                'success',
+                `Basculé vers l'année universitaire ${targetAnneeLabel}.`
+              );
             }
-            if (skippedCount > 0) {
-              parts.push(`${skippedCount} déjà inscrit(s) ignoré(s)`);
-            }
-            handleUpdateDb(nextDb, `${parts.join(' · ')}.`);
             handleAnneeChange(targetAnneeLabel);
-            setYearPointerModal(null);
+            setNewYearModalOpen(false);
           }}
         />
       )}
