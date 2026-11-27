@@ -746,24 +746,26 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                     <option value="double">Double</option>
                   </select>
                 </label>
-                <label className="block">
-                  <span className="block text-[11px] font-medium text-slate-600 mb-1">
-                    Police
-                  </span>
-                  <select
-                    value={template.appearance.fontFamily}
-                    onChange={(e) =>
-                      patchSection('appearance', {
-                        fontFamily: e.target.value as DocumentFontFamily,
-                      })
-                    }
-                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
-                  >
-                    <option value="sans">Sans serif</option>
-                    <option value="display">Titres (display)</option>
-                    <option value="mono">Monospace</option>
-                  </select>
-                </label>
+                {kind === 'carte' && (
+                  <label className="block">
+                    <span className="block text-[11px] font-medium text-slate-600 mb-1">
+                      Police
+                    </span>
+                    <select
+                      value={template.appearance.fontFamily}
+                      onChange={(e) =>
+                        patchSection('appearance', {
+                          fontFamily: e.target.value as DocumentFontFamily,
+                        })
+                      }
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                    >
+                      <option value="sans">Sans serif</option>
+                      <option value="display">Titres (display)</option>
+                      <option value="mono">Monospace</option>
+                    </select>
+                  </label>
+                )}
               </div>
               <label className="block">
                 <span className="block text-[11px] font-medium text-slate-600 mb-1">
@@ -946,10 +948,10 @@ export function AdministrationView({ db, anneeActive }: AdministrationViewProps)
                   <div className="flex flex-wrap items-center justify-between gap-1.5">
                     <p className="text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1.5">
                       <Type className="w-3.5 h-3.5 text-blue-600" />
-                      Police &amp; caractère du texte
+                      Police &amp; caractère
                     </p>
                     <span className="text-[10.5px] text-slate-500">
-                      Appliqué directement au certificat ci-dessous
+                      S’appliquent à l’en-tête et au texte du certificat
                     </span>
                   </div>
                   <BodyTypographyControls

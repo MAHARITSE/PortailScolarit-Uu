@@ -11,6 +11,7 @@ import {
   renderCertificateBody,
 } from '../services/database';
 import {
+  BodyFontFamily,
   CertificateSettings,
   DocumentTemplate,
   EnrichedInscription,
@@ -37,6 +38,14 @@ interface CertificateDocumentProps {
   /** Rendu « dans la page » : pas de marge interne ni d'ombre */
   embedded?: boolean;
 }
+
+/** Piles de polices web utilisées pour toute la feuille (en-tête compris). */
+const FONT_STACK: Record<BodyFontFamily, string> = {
+  sans: 'ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif',
+  serif: 'Georgia, "Times New Roman", Times, serif',
+  display: '"Poppins", "Segoe UI", system-ui, sans-serif',
+  mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+};
 
 const FONT_CLASS: Record<DocumentTemplate['appearance']['fontFamily'], string> = {
   sans: 'font-sans',
@@ -90,6 +99,14 @@ export function CertificateDocument({
   // complété automatiquement avec les données — aucun tableau.
   const phraseMode = (tpl.body.mode ?? 'phrase') !== 'table';
   const bodyStyle = tpl.body.style ?? DEFAULT_DOCUMENT_TEMPLATES.certificat.body.style;
+  /** Caractère (gras, italique, souligné, majuscules) appliqué aussi à l'en-tête */
+  const headerCharStyle = {
+    fontWeight: bodyStyle.bold ? 700 : undefined,
+    fontStyle: bodyStyle.italic ? 'italic' : undefined,
+    textDecoration: bodyStyle.underline ? 'underline' : undefined,
+    textTransform: bodyStyle.uppercase ? ('uppercase' as const) : undefined,
+  };
+
   const bodyInlineStyle = {
     fontFamily: undefined,
     fontSize: bodyStyle.fontSize ? `${bodyStyle.fontSize * scale}px` : '0.98em',
@@ -168,6 +185,7 @@ export function CertificateDocument({
         borderColor: appearance.accentColor,
         color: appearance.textColor,
         fontSize: `${appearance.fontSize * scale}px`,
+        fontFamily: FONT_STACK[bodyStyle.fontFamily] ?? undefined,
       }}
     >
       {blocks.watermark && appearance.watermarkText && (
@@ -203,35 +221,41 @@ export function CertificateDocument({
 
           <div className="flex-1 text-center space-y-1">
             {tpl.header.line1 && (
-              <p className="text-[0.72em] font-semibold tracking-wider uppercase text-slate-700">
+              <p
+                className="text-[0.72em] font-semibold tracking-wider uppercase text-slate-700"
+                style={headerCharStyle}
+              >
                 {tpl.header.line1}
               </p>
             )}
             {tpl.header.line2 && (
-              <p className="text-[0.68em] italic text-slate-500">
+              <p className="text-[0.68em] italic text-slate-500" style={headerCharStyle}>
                 {tpl.header.line2}
               </p>
             )}
             {tpl.header.line3 && (
-              <p className="text-[0.78em] font-semibold uppercase text-slate-800 pt-1">
+              <p
+                className="text-[0.78em] font-semibold uppercase text-slate-800 pt-1"
+                style={headerCharStyle}
+              >
                 {tpl.header.line3}
               </p>
             )}
             {tpl.header.line4 && (
               <h2
                 className="text-[1.3em] font-bold tracking-tight uppercase font-display"
-                style={{ color: appearance.accentColor }}
+                style={{ color: appearance.accentColor, ...headerCharStyle }}
               >
                 {tpl.header.line4}
               </h2>
             )}
             {tpl.header.line5 && (
-              <p className="text-[0.78em] font-medium text-slate-700">
+              <p className="text-[0.78em] font-medium text-slate-700" style={headerCharStyle}>
                 {tpl.header.line5}
               </p>
             )}
             {tpl.footer.showFooter && tpl.footer.address && (
-              <p className="text-[0.65em] text-slate-500">
+              <p className="text-[0.65em] text-slate-500" style={headerCharStyle}>
                 {tpl.footer.address}
                 {tpl.footer.contacts ? ` · ${tpl.footer.contacts}` : ''}
               </p>
