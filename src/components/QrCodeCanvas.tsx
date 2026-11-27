@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import QRCode from 'qrcode';
 
 interface QrCodeCanvasProps {
@@ -8,31 +8,38 @@ interface QrCodeCanvasProps {
 }
 
 export function QrCodeCanvas({ value, size = 104, className = '' }: QrCodeCanvasProps) {
-  const [dataUrl, setDataUrl] = useState<string>('');
+  const svgData = useMemo(() => {
+    try {
+      const qr = QRCode.create(value, { errorCorrectionLevel: 'M' });
+      const count = qr.modules.size;
+      const margin = 1;
+      const total = count + margin * 2;
+      const parts: string[] = [];
 
-  useEffect(() => {
-    let active = true;
-    QRCode.toDataURL(value, {
-      width: size * 2,
-      margin: 1,
-      errorCorrectionLevel: 'M',
-      color: {
-        dark: '#0f172a',
-        light: '#ffffff',
-      },
-    })
-      .then((url) => {
-        if (active) setDataUrl(url);
-      })
-      .catch(() => {
-        if (active) setDataUrl('');
-      });
-    return () => {
-      active = false;
-    };
-  }, [value, size]);
+      for (let r = 0; r < count; r++) {
+        let runStart = -1;
+        for (let c = 0; c <= count; c++) {
+          const isDark = c < count && Boolean(qr.modules.get(r, c));
+          if (isDark && runStart === -1) {
+            runStart = c;
+          } else if (!isDark && runStart !== -1) {
+            const len = c - runStart;
+            parts.push(`M${runStart + margin},${r + margin}h${len}v1h-${len}z`);
+            runStart = -1;
+          }
+        }
+      }
 
-  if (!dataUrl) {
+      return {
+        viewBox: `0 0 ${total} ${total}`,
+        path: parts.join(''),
+      };
+    } catch {
+      return null;
+    }
+  }, [value]);
+
+  if (!svgData) {
     return (
       <div
         style={{ width: size, height: size }}
@@ -44,12 +51,17 @@ export function QrCodeCanvas({ value, size = 104, className = '' }: QrCodeCanvas
   }
 
   return (
-    <img
-      src={dataUrl}
-      alt="Code QR de vérification du certificat"
+    <svg
+      role="img"
+      aria-label="Code QR de vérification du certificat"
       width={size}
       height={size}
+      viewBox={svgData.viewBox}
+      shapeRendering="crispEdges"
       className={`block border border-slate-200 bg-white ${className}`}
-    />
+    >
+      <rect width="100%" height="100%" fill="#ffffff" />
+      <path d={svgData.path} fill="#0f172a" />
+    </svg>
   );
 }

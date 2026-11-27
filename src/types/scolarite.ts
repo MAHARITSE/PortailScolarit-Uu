@@ -72,6 +72,8 @@ export interface ScolariteDatabase {
   inscriptions: Inscription[];
 }
 
+export type NormalizedSex = 'M' | 'F' | 'Autre';
+
 export interface EnrichedInscription {
   idInscription: number;
   idEtudiant: number;
@@ -88,6 +90,7 @@ export interface EnrichedInscription {
   dateNaissance: string;
   lieuNaissance: string;
   sexe: string;
+  sexeNormalized: NormalizedSex;
   telephone: string;
   numeroCin: string;
   dateCin: string;
@@ -107,8 +110,9 @@ export interface EnrichedInscription {
 
 export type NavigationView =
   | 'accueil'
-  | 'importation'
+  | 'dashboard'
   | 'certificats'
+  | 'importation'
   | 'tables'
   | 'sauvegarde';
 
@@ -121,3 +125,74 @@ export type TableEntityKey =
   | 'annees'
   | 'etudiants'
   | 'inscriptions';
+
+export interface SaveResult {
+  ok: boolean;
+  error?: string;
+}
+
+export interface CertificateSettings {
+  issueDate: string; // YYYY-MM-DD or '' (means today)
+  signatoryTitle: string;
+  signatoryName: string;
+  showFiliation: boolean;
+}
+
+export type ImportDuplicateMode =
+  | 'skip_existing_inscription'
+  | 'update_student'
+  | 'create_new';
+
+export interface DuplicateStudentGroup {
+  key: string;
+  reason: string;
+  etudiants: Etudiant[];
+}
+
+export interface BirthdateAnomaly {
+  etudiant: Etudiant;
+  reason: string;
+}
+
+export interface DuplicateCodeEntry {
+  value: string;
+  annee: string;
+  inscriptionIds: number[];
+}
+
+export interface DatabaseAuditReport {
+  duplicateStudents: DuplicateStudentGroup[];
+  suspiciousBirthdates: BirthdateAnomaly[];
+  nonStandardSex: Etudiant[];
+  missingCin: Etudiant[];
+  missingTelephone: Etudiant[];
+  duplicateReferences: DuplicateCodeEntry[];
+  duplicateNumInscriptions: DuplicateCodeEntry[];
+  orphanInscriptions: Inscription[];
+  totalAnomalies: number;
+}
+
+export interface BreakdownItem {
+  label: string;
+  total: number;
+  male: number;
+  female: number;
+  other: number;
+}
+
+export interface DashboardStats {
+  totalInscriptions: number;
+  uniqueStudents: number;
+  multiYearStudents: number;
+  maleCount: number;
+  femaleCount: number;
+  otherSexCount: number;
+  cinCompletionRate: number;
+  withCinCount: number;
+  byMention: BreakdownItem[];
+  byFaculte: BreakdownItem[];
+  byNiveau: BreakdownItem[];
+  byGrade: BreakdownItem[];
+  byAnnee: BreakdownItem[];
+  topLieuxDelivrance: { label: string; count: number }[];
+}

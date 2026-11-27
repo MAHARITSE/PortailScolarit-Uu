@@ -1,142 +1,149 @@
-import React, { useState } from 'react';
+import { ChangeEvent, useMemo, useState } from 'react';
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Download,
   FileSpreadsheet,
+  RefreshCw,
   Upload,
 } from 'lucide-react';
 import {
   commitExcelImport,
-  formatDateFR,
+  downloadExcelTemplate,
+  ExcelRowStatus,
+  getWorkbookSheetNames,
   ParsedExcelRow,
   parseExcelWorkbook,
 } from '../services/database';
-import { ScolariteDatabase } from '../types/scolarite';
+import { ImportDuplicateMode, ScolariteDatabase } from '../types/scolarite';
 
 interface ImportationViewProps {
   db: ScolariteDatabase;
-  onUpdateDb: (nextDb: ScolariteDatabase) => void;
+  onUpdateDb: (nextDb: ScolariteDatabase, toastMessage?: string) => void;
 }
 
-const EXCEL_COLUMNS = [
-  { col: 'A', label: 'Référence', required: false },
-  { col: 'B', label: 'Numéro Inscription', required: false },
-  { col: 'C', label: 'Nom', required: true },
-  { col: 'D', label: 'Prénom', required: false },
-  { col: 'E', label: 'Date de naissance (JJ/MM/AAAA)', required: false },
-  { col: 'F', label: 'Lieu de naissance', required: false },
-  { col: 'G', label: 'Sexe (M/F)', required: false },
-  { col: 'H', label: 'Téléphone', required: false },
-  { col: 'I', label: 'Numéro CIN', required: false },
-  { col: 'J', label: 'Date CIN (JJ/MM/AAAA)', required: false },
-  { col: 'K', label: 'Délivrance CIN', required: false },
-  { col: 'L', label: 'Nationalité', required: false },
-  { col: 'M', label: 'Faculté', required: true },
-  { col: 'N', label: 'Domaine', required: true },
-  { col: 'O', label: 'Mention', required: true },
-  { col: 'P', label: 'Grade', required: false },
-  { col: 'Q', label: 'Niveau', required: true },
-  { col: 'R', label: 'Parcours', required: false },
-  { col: 'S', label: 'Année universitaire', required: true },
-];
-
 export function ImportationView({ db, onUpdateDb }: ImportationViewProps) {
-  const [parsedRows, setParsedRows] = useState<ParsedExcelRow[]>([]);
+  const [fileBuffer, setFileBuffer] = useState<ArrayBuffer | null>(null);
   const [fileName, setFileName] = useState<string>('');
-  const [statusMessage, setStatusMessage] = useState<{
-    type: 'success' | 'error';
-    text: string;
-  } | null>(null);
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string>('');
+  const [rows, setRows] = useState<ParsedExcelRow[]>([]);
+  const [statusFilter, setStatusFilter] = useState<'ALL' | ExcelRowStatus>(
+    'ALL'
+  );
+  const [duplicateMode, setDuplicateMode] = useState<ImportDuplicateMode>(
+    'skip_existing_inscription'
+  );
+  const [importReport, setImportReport] = useState<string | null>(null);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setStatusMessage(null);
+    const buffer = await file.arrayBuffer();
+    const sheets = getWorkbookSheetNames(buffer);
+    const firstSheet = sheets[0] ?? '';
+    setFileBuffer(buffer);
     setFileName(file.name);
-
-    try {
-      const buffer = await file.arrayBuffer();
-      const rows = parseExcelWorkbook(buffer);
-      if (rows.length === 0) {
-        setParsedRows([]);
-        setStatusMessage({
-          type: 'error',
-          text: 'Aucune donnée trouvée dans le fichier Excel. La ligne 1 doit contenir les en-têtes.',
-        });
-        return;
-      }
-      setParsedRows(rows);
-    } catch {
-      setParsedRows([]);
-      setStatusMessage({
-        type: 'error',
-        text: "Impossible d'ouvrir le fichier Excel ! Vérifiez que le format (.xlsx / .xls) est valide.",
-      });
-    }
+    setSheetNames(sheets);
+    setSelectedSheet(firstSheet);
+    setRows(parseExcelWorkbook(buffer, firstSheet, db));
+    setStatusFilter('ALL');
+    setImportReport(null);
     e.target.value = '';
   };
 
-  const validCount = parsedRows.filter((r) => r.valid).length;
-  const invalidCount = parsedRows.length - validCount;
+  const handleSheetChange = (sheet: string) => {
+    setSelectedSheet(sheet);
+    if (fileBuffer) {
+      setRows(parseExcelWorkbook(fileBuffer, sheet, db));
+      setStatusFilter('ALL');
+      setImportReport(null);
+    }
+  };
 
-  const handleImport = () => {
-    if (validCount === 0) return;
-    const { nextDb, importedCount } = commitExcelImport(db, parsedRows);
-    onUpdateDb(nextDb);
-    setParsedRows([]);
-    setFileName('');
-    setStatusMessage({
-      type: 'success',
-      text: `${importedCount} étudiant(s) importés avec succès !`,
-    });
+  const summary = useMemo(() => {
+    let newCount = 0;
+    let reinscCount = 0;
+    let dupCount = 0;
+    let errCount = 0;
+    for (const r of rows) {
+      if (r.status === 'new') newCount++;
+      else if (r.status === 'reinscription') reinscCount++;
+      else if (r.status === 'duplicate_inscription') dupCount++;
+      else errCount++;
+    }
+    return {
+      newCount,
+      reinscCount,
+      dupCount,
+      errCount,
+      total: rows.length,
+    };
+  }, [rows]);
+
+  const displayedRows = useMemo(() => {
+    if (statusFilter === 'ALL') return rows;
+    return rows.filter((r) => r.status === statusFilter);
+  }, [rows, statusFilter]);
+
+  const actionableCount = useMemo(() => {
+    if (duplicateMode === 'skip_existing_inscription') {
+      return summary.newCount + summary.reinscCount;
+    }
+    return summary.newCount + summary.reinscCount + summary.dupCount;
+  }, [duplicateMode, summary]);
+
+  const handleCommit = () => {
+    if (!actionableCount) return;
+    const result = commitExcelImport(db, rows, duplicateMode);
+    const msg = `Import terminé : ${result.importedCount} inscription(s) créée(s), ${result.updatedCount} mise(s) à jour, ${result.skippedCount} ignorée(s).`;
+    onUpdateDb(result.nextDb, msg);
+    setImportReport(msg);
+    setRows([]);
+    setFileBuffer(null);
+    setSheetNames([]);
   };
 
   return (
     <div className="space-y-6">
-      {/* Specification Card */}
-      <div className="bg-white border border-slate-200 rounded-lg p-6 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">
-              Importation des étudiants depuis Excel
-            </h2>
-            <p className="text-sm text-slate-600 mt-1">
-              Avant d&apos;importer, vérifiez que votre fichier Excel respecte la disposition des colonnes A à S (la ligne 1 doit contenir les en-têtes).
-            </p>
+      <div className="bg-white border border-slate-200 rounded-lg p-6 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-blue-50 text-blue-700">
+              <FileSpreadsheet className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-slate-900 font-display">
+                Importation Excel / CSV
+              </h2>
+              <p className="text-xs text-slate-500">
+                Support multi-feuilles, détection automatique des entêtes (dont téléphone en colonne H) et gestion des réinscriptions / doublons
+              </p>
+            </div>
           </div>
-          <a
-            href="/assets/IMPORTATION_Format.xlsx"
-            download="IMPORTATION_Format.xlsx"
-            className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 inline-flex items-center gap-1.5 whitespace-nowrap"
+
+          <button
+            type="button"
+            onClick={downloadExcelTemplate}
+            className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 inline-flex items-center gap-1.5"
           >
             <Download className="w-4 h-4" />
-            Télécharger modèle (.xlsx)
-          </a>
+            Télécharger le modèle Excel
+          </button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 pt-2">
-          {EXCEL_COLUMNS.map((c) => (
-            <div
-              key={c.col}
-              className="px-2.5 py-2 border border-slate-200 rounded bg-slate-50/70 text-xs"
-            >
-              <span className="font-mono font-semibold text-blue-700 mr-1.5">{c.col}</span>
-              <span className="text-slate-700">{c.label}</span>
-              {c.required && <span className="text-red-600 ml-1">*</span>}
-            </div>
-          ))}
-        </div>
-
-        {/* Upload Dropzone */}
-        <label className="mt-4 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/50 hover:bg-blue-50/30 rounded-lg p-8 cursor-pointer transition-colors">
-          <Upload className="w-8 h-8 text-blue-600 mb-2" />
-          <span className="text-sm font-semibold text-slate-800">
-            Sélectionner un fichier Excel (.xlsx, .xls)
-          </span>
-          <span className="text-xs text-slate-500 mt-1">
-            {fileName ? `Fichier chargé : ${fileName}` : 'Cliquez pour parcourir vos fichiers'}
-          </span>
+        {/* Upload Zone */}
+        <label className="block border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-lg p-8 text-center cursor-pointer transition-colors bg-slate-50/50">
+          <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+          <p className="text-sm font-medium text-slate-700">
+            {fileName
+              ? `Fichier chargé : ${fileName}`
+              : 'Cliquez pour sélectionner un fichier .xlsx, .xls ou .csv'}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            Colonnes reconnues : Ref, Num Inscr, NOM, PRÉNOMS, DATE DE NAISSANCE, SEXE, Téléphone, CIN, Faculte, Domaine, Mention, Grade, Niveau, Parcours, Annee.
+          </p>
           <input
             type="file"
             accept=".xlsx,.xls,.csv"
@@ -145,108 +152,191 @@ export function ImportationView({ db, onUpdateDb }: ImportationViewProps) {
           />
         </label>
 
-        {statusMessage && (
-          <div
-            className={`px-4 py-3 rounded-md border text-sm flex items-center gap-2.5 ${
-              statusMessage.type === 'success'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                : 'bg-red-50 border-red-200 text-red-800'
-            }`}
-          >
-            {statusMessage.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-            ) : (
-              <AlertCircle className="w-4 h-4 shrink-0" />
+        {importReport && (
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-md text-xs text-emerald-800 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{importReport}</span>
+          </div>
+        )}
+
+        {/* Import Options when file loaded */}
+        {rows.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+            {sheetNames.length > 1 && (
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">
+                  Feuille Excel à analyser ({sheetNames.length} détectées)
+                </label>
+                <select
+                  value={selectedSheet}
+                  onChange={(e) => handleSheetChange(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded bg-white"
+                >
+                  {sheetNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
-            <span>{statusMessage.text}</span>
+
+            <div>
+              <label className="block font-medium text-slate-700 mb-1">
+                Stratégie face aux doublons détectés
+              </label>
+              <select
+                value={duplicateMode}
+                onChange={(e) =>
+                  setDuplicateMode(e.target.value as ImportDuplicateMode)
+                }
+                className="w-full px-3 py-1.5 border border-slate-300 rounded bg-white"
+              >
+                <option value="skip_existing_inscription">
+                  Ignorer les inscriptions déjà présentes sur la même année (recommandé)
+                </option>
+                <option value="update_student">
+                  Mettre à jour la fiche étudiant &amp; l&apos;inscription existante
+                </option>
+                <option value="create_new">
+                  Tout créer comme nouvelles fiches (homonymes avérés)
+                </option>
+              </select>
+            </div>
           </div>
         )}
       </div>
 
       {/* Preview Table */}
-      {parsedRows.length > 0 && (
+      {rows.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-2.5">
-              <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900">
-                  Aperçu de l&apos;importation ({parsedRows.length} lignes)
-                </h3>
-                <p className="text-xs text-slate-500 tabular-nums">
-                  {validCount} valide(s) · {invalidCount} ignorée(s)
-                </p>
-              </div>
+          <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            {/* Status Filter Tabs */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {(
+                [
+                  ['ALL', `Toutes (${summary.total})`, 'bg-slate-900 text-white'],
+                  [
+                    'new',
+                    `Nouveaux (${summary.newCount})`,
+                    'bg-emerald-600 text-white',
+                  ],
+                  [
+                    'reinscription',
+                    `Réinscriptions (${summary.reinscCount})`,
+                    'bg-blue-600 text-white',
+                  ],
+                  [
+                    'duplicate_inscription',
+                    `Déjà inscrits (${summary.dupCount})`,
+                    'bg-amber-600 text-white',
+                  ],
+                  [
+                    'error',
+                    `Erreurs (${summary.errCount})`,
+                    'bg-red-600 text-white',
+                  ],
+                ] as const
+              ).map(([key, label, activeCls]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setStatusFilter(key)}
+                  className={`px-3 py-1.5 rounded-md font-medium border ${
+                    statusFilter === key
+                      ? `${activeCls} border-transparent`
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setParsedRows([]);
-                  setFileName('');
-                }}
-                className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50"
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                onClick={handleImport}
-                disabled={validCount === 0}
-                className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-md hover:bg-emerald-700 disabled:opacity-40"
-              >
-                Importer {validCount} étudiant(s)
-              </button>
-            </div>
+
+            <button
+              type="button"
+              disabled={actionableCount === 0}
+              onClick={handleCommit}
+              className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40"
+            >
+              Importer {actionableCount} ligne(s)
+            </button>
           </div>
 
-          <div className="overflow-x-auto max-h-[420px]">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 text-[11px] font-semibold uppercase text-slate-600">
-                <tr>
-                  <th className="px-3 py-2">Ligne</th>
-                  <th className="px-3 py-2">Statut</th>
-                  <th className="px-3 py-2">Réf.</th>
-                  <th className="px-3 py-2">Nom &amp; Prénom</th>
-                  <th className="px-3 py-2">Naissance</th>
-                  <th className="px-3 py-2">Faculté</th>
-                  <th className="px-3 py-2">Mention</th>
-                  <th className="px-3 py-2">Niveau</th>
-                  <th className="px-3 py-2">Année</th>
+          <div className="overflow-x-auto max-h-[540px]">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 bg-slate-50 z-10">
+                <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <th className="py-2.5 px-4">Ligne</th>
+                  <th className="py-2.5 px-4">Statut</th>
+                  <th className="py-2.5 px-4">Réf / N° Inscr.</th>
+                  <th className="py-2.5 px-4">Nom &amp; Prénom</th>
+                  <th className="py-2.5 px-4">Sexe</th>
+                  <th className="py-2.5 px-4">CIN / Tél</th>
+                  <th className="py-2.5 px-4">Formation &amp; Année</th>
+                  <th className="py-2.5 px-4">Observation</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {parsedRows.slice(0, 100).map((r) => (
-                  <tr key={r.rowIndex} className={r.valid ? 'hover:bg-slate-50' : 'bg-red-50/50'}>
-                    <td className="px-3 py-2 font-mono tabular-nums text-slate-500">
-                      {r.rowIndex}
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {displayedRows.slice(0, 250).map((r) => (
+                  <tr key={r.rowIndex} className="hover:bg-slate-50/70">
+                    <td className="py-2.5 px-4 font-mono text-slate-400">
+                      #{r.rowIndex}
                     </td>
-                    <td className="px-3 py-2">
-                      {r.valid ? (
-                        <span className="text-emerald-700 font-medium">Prêt</span>
-                      ) : (
-                        <span className="text-red-700 font-medium">{r.error}</span>
+                    <td className="py-2.5 px-4">
+                      {r.status === 'new' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">
+                          <CheckCircle2 className="w-3 h-3" /> Nouveau
+                        </span>
+                      )}
+                      {r.status === 'reinscription' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
+                          <RefreshCw className="w-3 h-3" /> Réinscription
+                        </span>
+                      )}
+                      {r.status === 'duplicate_inscription' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-medium">
+                          <AlertTriangle className="w-3 h-3" /> Déjà inscrit
+                        </span>
+                      )}
+                      {r.status === 'error' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-50 text-red-700 font-medium">
+                          <AlertCircle className="w-3 h-3" /> Erreur
+                        </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 font-mono tabular-nums">{r.reference || '—'}</td>
-                    <td className="px-3 py-2 font-medium text-slate-900">
+                    <td className="py-2.5 px-4 font-mono text-slate-700">
+                      {r.reference || '—'} / {r.numInscription || '—'}
+                    </td>
+                    <td className="py-2.5 px-4 font-semibold text-slate-900">
                       {r.nom} {r.prenom}
                     </td>
-                    <td className="px-3 py-2 font-mono tabular-nums">
-                      {formatDateFR(r.dateNaissance) || '—'}
+                    <td className="py-2.5 px-4 font-mono">{r.sexe}</td>
+                    <td className="py-2.5 px-4 text-slate-600 font-mono text-[11px]">
+                      {r.numeroCin || '—'} · {r.telephone || '—'}
                     </td>
-                    <td className="px-3 py-2 max-w-[180px] truncate">{r.faculte}</td>
-                    <td className="px-3 py-2">{r.mention}</td>
-                    <td className="px-3 py-2">{r.niveau}</td>
-                    <td className="px-3 py-2 font-mono tabular-nums">{r.annee}</td>
+                    <td className="py-2.5 px-4 text-slate-700">
+                      {r.niveau} {r.mention} · {r.annee}
+                    </td>
+                    <td className="py-2.5 px-4 text-slate-500">
+                      {r.error ||
+                        r.warning ||
+                        (r.status === 'duplicate_inscription'
+                          ? 'Déjà inscrit sur cette année'
+                          : r.status === 'reinscription'
+                            ? `Étudiant existant #${r.matchedEtudiantId}`
+                            : 'Prêt')}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          {parsedRows.length > 100 && (
-            <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 text-xs text-slate-500">
-              Affichage limité aux 100 premières lignes sur {parsedRows.length}. Toutes les lignes valides seront importées.
+          {displayedRows.length > 250 && (
+            <div className="px-5 py-2.5 border-t border-slate-200 bg-slate-50 text-[11px] text-slate-500">
+              Aperçu limité aux 250 premières lignes affichées (
+              {displayedRows.length} au total dans ce filtre). Toutes les lignes
+              valides seront traitées lors de l&apos;importation.
             </div>
           )}
         </div>

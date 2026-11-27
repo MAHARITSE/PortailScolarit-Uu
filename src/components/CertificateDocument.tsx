@@ -1,26 +1,37 @@
-import { formatDateFR } from '../services/database';
-import { EnrichedInscription } from '../types/scolarite';
+import { formatDateFR, normalizeSex } from '../services/database';
+import { CertificateSettings, EnrichedInscription } from '../types/scolarite';
 import { QrCodeCanvas } from './QrCodeCanvas';
 
 interface CertificateDocumentProps {
   record: EnrichedInscription;
   issueDate?: string;
+  settings?: CertificateSettings;
 }
 
-export function CertificateDocument({ record, issueDate }: CertificateDocumentProps) {
-  const isFemale = record.sexe?.toUpperCase() === 'F';
+export function CertificateDocument({
+  record,
+  issueDate,
+  settings,
+}: CertificateDocumentProps) {
+  const isFemale = (record.sexeNormalized ?? normalizeSex(record.sexe)) === 'F';
   const civilPrefix = isFemale ? 'Mme/Mlle' : 'M.';
   const inscritPhrase = isFemale
     ? "Est inscrite régulièrement au sein de l'Université de Toliara pour l'Année Universitaire"
     : "Est inscrit régulièrement au sein de l'Université de Toliara pour l'Année Universitaire";
 
-  const todayFR =
-    issueDate ||
-    new Date().toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
+  const resolvedDate = issueDate || settings?.issueDate;
+  const todayFR = resolvedDate
+    ? formatDateFR(resolvedDate)
+    : new Date().toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
+
+  const signatoryTitle =
+    settings?.signatoryTitle?.trim() || 'Le Responsable de la Scolarité Centrale';
+  const signatoryName = settings?.signatoryName?.trim() || '';
+  const showFiliation = settings?.showFiliation ?? true;
 
   const refCode = record.reference || record.numInscription || String(record.idInscription);
 
@@ -39,7 +50,7 @@ export function CertificateDocument({ record, issueDate }: CertificateDocumentPr
   ].join('\n');
 
   return (
-    <article className="bg-white text-slate-900 border border-slate-200 rounded-sm shadow-sm p-8 sm:p-10 max-w-[794px] mx-auto print:border-0 print:shadow-none print:p-4">
+    <article className="bg-white text-slate-900 border border-slate-200 rounded-sm shadow-sm p-8 sm:p-10 max-w-[794px] mx-auto print:border-0 print:shadow-none print:p-4 print:break-inside-avoid">
       {/* En-tête institutionnel */}
       <div className="flex items-start justify-between gap-4 border-b-2 border-slate-800 pb-5">
         <div className="w-24 shrink-0 flex flex-col items-center">
@@ -95,7 +106,8 @@ export function CertificateDocument({ record, issueDate }: CertificateDocumentPr
         </p>
         {record.numInscription && (
           <p className="font-mono tabular-nums text-slate-600">
-            N° Inscription : <span className="font-semibold text-slate-900">{record.numInscription}</span>
+            N° Inscription :{' '}
+            <span className="font-semibold text-slate-900">{record.numInscription}</span>
           </p>
         )}
       </div>
@@ -110,7 +122,8 @@ export function CertificateDocument({ record, issueDate }: CertificateDocumentPr
       {/* Corps de l'attestation */}
       <div className="space-y-5 text-[14px] leading-relaxed text-slate-800">
         <p>
-          Le Responsable de la Scolarité Centrale de l&apos;Université de Toliara certifie par la présente que :
+          Le Responsable de la Scolarité Centrale de l&apos;Université de Toliara certifie par la
+          présente que :
         </p>
 
         <div className="bg-slate-50/80 border border-slate-200 px-5 py-4 space-y-2">
@@ -131,7 +144,9 @@ export function CertificateDocument({ record, issueDate }: CertificateDocumentPr
             </p>
             <p>
               <span className="font-semibold text-slate-900">CIN N° :</span>{' '}
-              <span className="font-mono tabular-nums">{record.numeroCin || 'Non renseigné'}</span>
+              <span className="font-mono tabular-nums">
+                {record.numeroCin || 'Non renseigné'}
+              </span>
             </p>
             <p>
               <span className="font-semibold text-slate-900">Délivré le :</span>{' '}
@@ -140,7 +155,7 @@ export function CertificateDocument({ record, issueDate }: CertificateDocumentPr
               </span>
               {record.lieuDelivrance ? ` à ${record.lieuDelivrance}` : ''}
             </p>
-            {(record.nomPere || record.nomMere) && (
+            {showFiliation && (record.nomPere || record.nomMere) && (
               <p className="sm:col-span-2">
                 <span className="font-semibold text-slate-900">Filiation :</span>{' '}
                 {record.nomPere ? `Père : ${record.nomPere}` : ''}
@@ -191,7 +206,8 @@ export function CertificateDocument({ record, issueDate }: CertificateDocumentPr
         </div>
 
         <p className="text-[13px] text-slate-700 pt-1">
-          En foi de quoi, le présent certificat est délivré à l&apos;intéressé(e) pour servir et valoir ce que de droit.
+          En foi de quoi, le présent certificat est délivré à l&apos;intéressé(e) pour servir et
+          valoir ce que de droit.
         </p>
       </div>
 
@@ -201,7 +217,9 @@ export function CertificateDocument({ record, issueDate }: CertificateDocumentPr
           <QrCodeCanvas value={qrPayload} size={96} />
           <div className="text-[11px] text-slate-500 space-y-0.5 max-w-[200px]">
             <p className="font-semibold text-slate-700">Scolarité Log · Vérification</p>
-            <p className="font-mono tabular-nums">ID #{record.idEtudiant} / #{record.idInscription}</p>
+            <p className="font-mono tabular-nums">
+              ID #{record.idEtudiant} / #{record.idInscription}
+            </p>
             <p>Document officiel de l&apos;Université de Toliara</p>
           </div>
         </div>
@@ -211,7 +229,10 @@ export function CertificateDocument({ record, issueDate }: CertificateDocumentPr
             Fait à Toliara, le <span className="font-semibold tabular-nums">{todayFR}</span>
           </p>
           <div className="border-t border-slate-400 pt-1.5 text-xs font-semibold text-slate-800">
-            Le Responsable de la Scolarité Centrale
+            <p>{signatoryTitle}</p>
+            {signatoryName && (
+              <p className="mt-0.5 font-normal text-slate-600">{signatoryName}</p>
+            )}
           </div>
         </div>
       </div>

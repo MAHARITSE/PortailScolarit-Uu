@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
+  BarChart3,
   Database,
   FileCheck2,
   FileSpreadsheet,
@@ -9,12 +10,18 @@ import {
   Table2,
   X,
 } from 'lucide-react';
-import { AccueilView } from './components/AccueilView';
+import { AccueilView, QuickFilterMode } from './components/AccueilView';
 import { CertificatsView } from './components/CertificatsView';
+import { DashboardView } from './components/DashboardView';
 import { ImportationView } from './components/ImportationView';
 import { SauvegardeView } from './components/SauvegardeView';
 import { TablesSaisieView } from './components/TablesSaisieView';
-import { loadDatabase, saveDatabase } from './services/database';
+import { ToastContainer, ToastItem } from './components/Toast';
+import {
+  auditDatabase,
+  loadDatabase,
+  saveDatabase,
+} from './services/database';
 import { NavigationView, ScolariteDatabase } from './types/scolarite';
 
 const NAV_ITEMS: {
@@ -23,6 +30,7 @@ const NAV_ITEMS: {
   icon: typeof Home;
 }[] = [
   { key: 'accueil', label: 'Accueil & Inscriptions', icon: Home },
+  { key: 'dashboard', label: 'Tableau de Bord & Audit', icon: BarChart3 },
   { key: 'certificats', label: 'Certificats de Scolarité', icon: FileCheck2 },
   { key: 'importation', label: 'Importation Excel', icon: FileSpreadsheet },
   { key: 'tables', label: 'Tables de Saisie', icon: Table2 },
@@ -33,13 +41,53 @@ export default function App() {
   const [db, setDb] = useState<ScolariteDatabase>(() => loadDatabase());
   const [activeView, setActiveView] = useState<NavigationView>('accueil');
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [pendingQuickFilter, setPendingQuickFilter] =
+    useState<QuickFilterMode>('all');
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const toastCounter = useRef(1);
 
-  const handleUpdateDb = (nextDb: ScolariteDatabase) => {
-    setDb(nextDb);
-    saveDatabase(nextDb);
-  };
+  const pushToast = useCallback(
+    (type: 'success' | 'error', message: string) => {
+      const id = toastCounter.current++;
+      setToasts((prev) => [...prev.slice(-3), { id, type, message }]);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 4500);
+    },
+    []
+  );
 
-  const currentNav = NAV_ITEMS.find((item) => item.key === activeView) ?? NAV_ITEMS[0];
+  const dismissToast = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const handleUpdateDb = useCallback(
+    (nextDb: ScolariteDatabase, toastMessage?: string) => {
+      const saveRes = saveDatabase(nextDb);
+      setDb(nextDb);
+      if (!saveRes.ok) {
+        pushToast(
+          'error',
+          saveRes.error ||
+            "Impossible de sauvegarder dans le stockage local (quota dépassé). Exportez une sauvegarde JSON."
+        );
+      } else if (toastMessage) {
+        pushToast('success', toastMessage);
+      }
+    },
+    [pushToast]
+  );
+
+  const handleJumpToStudents = useCallback((filter: QuickFilterMode) => {
+    setPendingQuickFilter(filter);
+    setActiveView('accueil');
+    setMobileMenuOpen(false);
+  }, []);
+
+  const anomalyCount = useMemo(() => auditDatabase(db).totalAnomalies, [db]);
+
+  const currentNav =
+    NAV_ITEMS.find((item) => item.key === activeView) ?? NAV_ITEMS[0];
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex">
@@ -98,14 +146,25 @@ export default function App() {
                   setActiveView(item.key);
                   setMobileMenuOpen(false);
                 }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
+                className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
                   isActive
                     ? 'bg-blue-50 text-blue-700'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
-                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
-                <span className="truncate">{item.label}</span>
+                <span className="flex items-center gap-3 min-w-0">
+                  <Icon
+                    className={`w-4 h-4 shrink-0 ${
+                      isActive ? 'text-blue-600' : 'text-slate-400'
+                    }`}
+                  />
+                  <span className="truncate">{item.label}</span>
+                </span>
+                {item.key === 'dashboard' && anomalyCount > 0 && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded-full bg-amber-100 text-amber-800 shrink-0">
+                    {anomalyCount}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -120,15 +179,19 @@ export default function App() {
             className="w-6 h-6 object-contain shrink-0"
           />
           <div className="min-w-0">
-            <p className="font-medium text-slate-700 truncate">Scolarité Centrale</p>
-            <p className="text-[11px] text-slate-400 truncate">DSIN · Université de Toliara</p>
+            <p className="font-medium text-slate-700 truncate">
+              Scolarité Centrale
+            </p>
+            <p className="text-[11px] text-slate-400 truncate">
+              DSIN · Université de Toliara
+            </p>
           </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Top Bar Contract */}
+        {/* Top Bar */}
         <header className="no-print sticky top-0 z-30 bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -150,7 +213,16 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            {activeView !== 'dashboard' && anomalyCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveView('dashboard')}
+                className="hidden sm:inline-flex px-2.5 py-1.5 text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 items-center gap-1.5"
+              >
+                <span>{anomalyCount} anomalies qualité</span>
+              </button>
+            )}
             {activeView !== 'certificats' && (
               <button
                 type="button"
@@ -167,7 +239,19 @@ export default function App() {
         {/* Viewport */}
         <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto">
           {activeView === 'accueil' && (
-            <AccueilView db={db} onUpdateDb={handleUpdateDb} />
+            <AccueilView
+              db={db}
+              onUpdateDb={handleUpdateDb}
+              initialQuickFilter={pendingQuickFilter}
+              onClearInitialFilter={() => setPendingQuickFilter('all')}
+            />
+          )}
+          {activeView === 'dashboard' && (
+            <DashboardView
+              db={db}
+              onUpdateDb={handleUpdateDb}
+              onJumpToStudents={handleJumpToStudents}
+            />
           )}
           {activeView === 'certificats' && <CertificatsView db={db} />}
           {activeView === 'importation' && (
@@ -181,6 +265,9 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* Toast Feedback */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
