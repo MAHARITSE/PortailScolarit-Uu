@@ -17,6 +17,7 @@ import {
   parseExcelWorkbook,
 } from '../services/database';
 import { ImportDuplicateMode, ScolariteDatabase } from '../types/scolarite';
+import { LoadingWaitModal, nextAnimationFrame } from './LoadingWaitModal';
 
 interface ImportationViewProps {
   db: ScolariteDatabase;
@@ -42,29 +43,43 @@ export function ImportationView({
     'skip_existing_inscription'
   );
   const [importReport, setImportReport] = useState<string | null>(null);
+  const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const buffer = await file.arrayBuffer();
-    const sheets = getWorkbookSheetNames(buffer);
-    const firstSheet = sheets[0] ?? '';
-    setFileBuffer(buffer);
-    setFileName(file.name);
-    setSheetNames(sheets);
-    setSelectedSheet(firstSheet);
-    setRows(parseExcelWorkbook(buffer, firstSheet, db));
-    setStatusFilter('ALL');
-    setImportReport(null);
-    e.target.value = '';
+    setLoadingMessage(`Chargement et analyse de "${file.name}" en cours...`);
+    try {
+      await nextAnimationFrame();
+      const buffer = await file.arrayBuffer();
+      await nextAnimationFrame();
+      const sheets = getWorkbookSheetNames(buffer);
+      const firstSheet = sheets[0] ?? '';
+      const parsed = parseExcelWorkbook(buffer, firstSheet, db);
+      setFileBuffer(buffer);
+      setFileName(file.name);
+      setSheetNames(sheets);
+      setSelectedSheet(firstSheet);
+      setRows(parsed);
+      setStatusFilter('ALL');
+      setImportReport(null);
+    } finally {
+      setLoadingMessage(null);
+      e.target.value = '';
+    }
   };
 
-  const handleSheetChange = (sheet: string) => {
+  const handleSheetChange = async (sheet: string) => {
     setSelectedSheet(sheet);
-    if (fileBuffer) {
+    if (!fileBuffer) return;
+    setLoadingMessage(`Analyse de la feuille "${sheet}" en cours...`);
+    try {
+      await nextAnimationFrame();
       setRows(parseExcelWorkbook(fileBuffer, sheet, db));
       setStatusFilter('ALL');
       setImportReport(null);
+    } finally {
+      setLoadingMessage(null);
     }
   };
 
@@ -100,15 +115,23 @@ export function ImportationView({
     return summary.newCount + summary.reinscCount + summary.dupCount;
   }, [duplicateMode, summary]);
 
-  const handleCommit = () => {
+  const handleCommit = async () => {
     if (!actionableCount) return;
-    const result = commitExcelImport(db, rows, duplicateMode);
-    const msg = `Import terminé : ${result.importedCount} inscription(s) créée(s), ${result.updatedCount} mise(s) à jour, ${result.skippedCount} ignorée(s).`;
-    onUpdateDb(result.nextDb, msg);
-    setImportReport(msg);
-    setRows([]);
-    setFileBuffer(null);
-    setSheetNames([]);
+    setLoadingMessage(
+      `Importation de ${actionableCount.toLocaleString('fr-FR')} ligne(s) dans la base...`
+    );
+    try {
+      await nextAnimationFrame();
+      const result = commitExcelImport(db, rows, duplicateMode);
+      const msg = `Import terminé : ${result.importedCount} inscription(s) créée(s), ${result.updatedCount} mise(s) à jour, ${result.skippedCount} ignorée(s).`;
+      onUpdateDb(result.nextDb, msg);
+      setImportReport(msg);
+      setRows([]);
+      setFileBuffer(null);
+      setSheetNames([]);
+    } finally {
+      setLoadingMessage(null);
+    }
   };
 
   return (
@@ -358,6 +381,11 @@ export function ImportationView({
           )}
         </div>
       )}
+      <LoadingWaitModal
+        open={Boolean(loadingMessage)}
+        title="Veuillez patienter..."
+        message={loadingMessage ?? undefined}
+      />
     </div>
   );
 }

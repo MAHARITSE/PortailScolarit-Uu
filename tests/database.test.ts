@@ -21,6 +21,7 @@ import {
   computeDashboardStats,
   createAcademicYear,
   enrichInscriptions,
+  ensureCertificateIdentitiesBatch,
   findNextNiveauId,
   formatCertificateNumber,
   formatDateFR,
@@ -1132,5 +1133,20 @@ describe('Importation Excel multi-feuilles & Vérification QR', () => {
     const okDb = importDatabaseJson(JSON.stringify(db));
     assert.equal(okDb.etudiants.length, 727);
     assert.throws(() => importDatabaseJson('{"etudiants":[]}'), /manquante/);
+  });
+
+  it('génère les identités de certificat en lot (O(N)) sans bloquer et de façon idempotente', () => {
+    const db = getSeedDatabase();
+    const allIds = db.inscriptions.map((i) => i.id);
+    const first = ensureCertificateIdentitiesBatch(db, allIds);
+    assert.equal(first.records.length, allIds.length);
+    assert.equal(first.createdCount, allIds.length);
+    assert.ok(first.records.every((r) => Boolean(r.certificateToken && r.numeroCertificat && r.dateDelivrance)));
+
+    // Deuxième appel : aucune nouvelle création, même référence retournée
+    const second = ensureCertificateIdentitiesBatch(first.nextDb, allIds);
+    assert.equal(second.createdCount, 0);
+    assert.equal(second.nextDb, first.nextDb);
+    assert.equal(second.records.length, allIds.length);
   });
 });

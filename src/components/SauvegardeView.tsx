@@ -17,6 +17,7 @@ import {
   resetToSeedDatabase,
 } from '../services/database';
 import { ScolariteDatabase } from '../types/scolarite';
+import { LoadingWaitModal, nextAnimationFrame } from './LoadingWaitModal';
 
 interface SauvegardeViewProps {
   db: ScolariteDatabase;
@@ -33,6 +34,7 @@ export function SauvegardeView({ db, onUpdateDb }: SauvegardeViewProps) {
   const [confirmAction, setConfirmAction] = useState<'reset' | 'purge' | null>(
     null
   );
+  const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
 
   const storageKB = useMemo(() => getDatabaseStorageSizeKB(db), [db]);
   const storagePercent = Math.min(
@@ -43,8 +45,11 @@ export function SauvegardeView({ db, onUpdateDb }: SauvegardeViewProps) {
   const handleRestoreJson = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setLoadingMessage(`Chargement et restauration de "${file.name}" en cours...`);
     try {
+      await nextAnimationFrame();
       const text = await file.text();
+      await nextAnimationFrame();
       const restored = importDatabaseJson(text);
       onUpdateDb(
         restored,
@@ -60,30 +65,43 @@ export function SauvegardeView({ db, onUpdateDb }: SauvegardeViewProps) {
         text: err instanceof Error ? err.message : 'Erreur de lecture JSON.',
       });
     } finally {
+      setLoadingMessage(null);
       e.target.value = '';
     }
   };
 
-  const handleConfirmAction = () => {
-    if (confirmAction === 'reset') {
-      const seeded = resetToSeedDatabase();
-      onUpdateDb(
-        seeded,
-        `Base réinitialisée aux données d'origine (${seeded.etudiants.length} étudiants).`
-      );
-      setStatusMessage({
-        type: 'success',
-        text: 'Jeu de données initial restauré avec succès.',
-      });
-    } else if (confirmAction === 'purge') {
-      const empty = createEmptyDatabase();
-      onUpdateDb(empty, 'Base locale vidée.');
-      setStatusMessage({
-        type: 'success',
-        text: 'Toutes les tables locales ont été vidées.',
-      });
-    }
+  const handleConfirmAction = async () => {
+    const action = confirmAction;
     setConfirmAction(null);
+    if (!action) return;
+    setLoadingMessage(
+      action === 'reset'
+        ? "Réinitialisation des données d'origine en cours..."
+        : 'Nettoyage de la base locale en cours...'
+    );
+    try {
+      await nextAnimationFrame();
+      if (action === 'reset') {
+        const seeded = resetToSeedDatabase();
+        onUpdateDb(
+          seeded,
+          `Base réinitialisée aux données d'origine (${seeded.etudiants.length} étudiants).`
+        );
+        setStatusMessage({
+          type: 'success',
+          text: 'Jeu de données initial restauré avec succès.',
+        });
+      } else if (action === 'purge') {
+        const empty = createEmptyDatabase();
+        onUpdateDb(empty, 'Base locale vidée.');
+        setStatusMessage({
+          type: 'success',
+          text: 'Toutes les tables locales ont été vidées.',
+        });
+      }
+    } finally {
+      setLoadingMessage(null);
+    }
   };
 
   const quotaColor =
@@ -294,6 +312,11 @@ export function SauvegardeView({ db, onUpdateDb }: SauvegardeViewProps) {
           </div>
         </div>
       )}
+      <LoadingWaitModal
+        open={Boolean(loadingMessage)}
+        title="Veuillez patienter..."
+        message={loadingMessage ?? undefined}
+      />
     </div>
   );
 }

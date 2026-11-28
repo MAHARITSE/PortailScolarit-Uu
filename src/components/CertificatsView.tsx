@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckSquare,
   ChevronLeft,
@@ -18,12 +18,14 @@ import {
 import {
   buildNiveauFilterOptions,
   enrichInscriptions,
+  ensureCertificateIdentitiesBatch,
   ensureCertificateIdentity,
   formatDateFR,
   loadCertificateSettings,
   loadDocumentTemplates,
   normalizeNiveauKey,
   registerCertificate,
+  registerCertificatesBatch,
   saveCertificateSettings,
   verifyCertificateQuery,
 } from '../services/database';
@@ -34,6 +36,7 @@ import {
 } from '../types/scolarite';
 import { CertificateDocument } from './CertificateDocument';
 import { CertificatePrintSheets } from './CertificatePrintSheets';
+import { LoadingWaitModal, nextAnimationFrame } from './LoadingWaitModal';
 import { StudentInscriptionModal } from './StudentInscriptionModal';
 
 interface CertificatsViewProps {
@@ -69,6 +72,12 @@ export function CertificatsView({
     null
   );
   const [printTargets, setPrintTargets] = useState<EnrichedInscription[]>([]);
+  const [printLoading, setPrintLoading] = useState<{
+    message: string;
+    processed?: number;
+    total?: number;
+  } | null>(null);
+  const printJobIdRef = useRef(0);
 
   // Certificate settings persisted locally
   const [settings, setSettings] = useState<CertificateSettings>(() =>
@@ -217,40 +226,95 @@ export function CertificatsView({
     setPreviewItem(result.record ?? item);
   };
 
-  const triggerPrint = (targets: EnrichedInscription[]) => {
+  const cancelPrintPreparation = () => {
+    printJobIdRef.current++;
+    setPrintLoading(null);
+    setPrintTargets([]);
+  };
+
+  const triggerPrint = async (targets: EnrichedInscription[]) => {
     if (targets.length === 0) return;
-    let nextDb = db;
-    const prepared: EnrichedInscription[] = [];
-    for (const target of targets) {
-      const result = ensureCertificateIdentity(nextDb, target.idInscription);
-      nextDb = result.nextDb;
-      const record = result.record ?? target;
-      prepared.push(record);
-      registerCertificate({
-        token: result.token || record.certificateToken,
+    const jobId = ++printJobIdRef.current;
+    const total = targets.length;
+
+    setPrintLoading({
+      message:
+        total > 1
+          ? `Chargement de l'état pour ${total.toLocaleString('fr-FR')} certificats...`
+          : "Chargement de l'état d'impression...",
+      processed: total > 1 ? 0 : undefined,
+      total: total > 1 ? total : undefined,
+    });
+    setPrintTargets([]);
+
+    // Laisse le navigateur afficher « Veuillez patienter... » avant tout traitement lourd
+    await nextAnimationFrame();
+    if (printJobIdRef.current !== jobId) return;
+
+    const batch = ensureCertificateIdentitiesBatch(
+      db,
+      targets.map((t) => t.idInscription)
+    );
+    const prepared = batch.records.length > 0 ? batch.records : targets;
+    const issuedAt = new Date().toISOString();
+
+    registerCertificatesBatch(
+      prepared.map((record) => ({
+        token: record.certificateToken,
         idInscription: record.idInscription,
         idEtudiant: record.idEtudiant,
-        numeroCertificat: result.numeroCertificat || record.numeroCertificat,
+        numeroCertificat: record.numeroCertificat,
         nom: record.nom,
         prenom: record.prenom,
         mention: record.mention,
         niveau: record.niveau,
         annee: record.annee,
-        issuedAt: new Date().toISOString(),
-      });
-    }
-    if (onUpdateDb && nextDb !== db) {
+        issuedAt,
+      }))
+    );
+
+    if (onUpdateDb && batch.nextDb !== db) {
       onUpdateDb(
-        nextDb,
+        batch.nextDb,
         prepared.length > 1
           ? `${prepared.length} certificats numérotés et horodatés.`
           : 'Certificat numéroté et horodaté.'
       );
     }
-    setPrintTargets(prepared);
-    setTimeout(() => {
-      window.print();
-    }, 80);
+
+    // Montage progressif par tranches pour ne jamais figer le navigateur
+    const RENDER_BATCH = 20;
+    if (prepared.length <= RENDER_BATCH) {
+      setPrintTargets(prepared);
+      if (total > 1) {
+        setPrintLoading({
+          message: `Finalisation de la mise en page (${total} certificats)...`,
+          processed: total,
+          total,
+        });
+      }
+      await nextAnimationFrame();
+      await nextAnimationFrame();
+    } else {
+      for (let end = RENDER_BATCH; end < prepared.length + RENDER_BATCH; end += RENDER_BATCH) {
+        if (printJobIdRef.current !== jobId) return;
+        const clampedEnd = Math.min(end, prepared.length);
+        setPrintTargets(prepared.slice(0, clampedEnd));
+        setPrintLoading({
+          message: "Préparation des certificats pour l'impression...",
+          processed: clampedEnd,
+          total: prepared.length,
+        });
+        await nextAnimationFrame();
+      }
+      await nextAnimationFrame();
+    }
+
+    if (printJobIdRef.current !== jobId) return;
+    setPrintLoading(null);
+    await nextAnimationFrame();
+    if (printJobIdRef.current !== jobId) return;
+    window.print();
   };
 
   const verifyResults = useMemo(() => {
@@ -824,6 +888,15 @@ export function CertificatsView({
           }}
         />
       )}
+
+      <LoadingWaitModal
+        open={Boolean(printLoading)}
+        title="Veuillez patienter..."
+        message={printLoading?.message}
+        processed={printLoading?.processed}
+        total={printLoading?.total}
+        onCancel={cancelPrintPreparation}
+      />
     </div>
   );
 }

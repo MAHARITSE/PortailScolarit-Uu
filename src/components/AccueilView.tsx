@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowUpDown,
@@ -21,6 +21,7 @@ import {
 import {
   buildNiveauFilterOptions,
   enrichInscriptions,
+  ensureCertificateIdentitiesBatch,
   exportInscriptionsToCsv,
   exportInscriptionsToXlsx,
   formatDateFR,
@@ -30,11 +31,13 @@ import {
   loadDocumentTemplates,
   normalizeNiveauKey,
   registerCertificate,
+  registerCertificatesBatch,
 } from '../services/database';
 import { EnrichedInscription, ScolariteDatabase } from '../types/scolarite';
 import { BatchReinscriptionModal } from './BatchReinscriptionModal';
 import { CertificateDocument } from './CertificateDocument';
 import { CertificatePrintSheets } from './CertificatePrintSheets';
+import { LoadingWaitModal, nextAnimationFrame } from './LoadingWaitModal';
 import { StudentCardDocument } from './StudentCardDocument';
 import { StudentCardPrintSheets } from './StudentCardPrintSheets';
 import { StudentDetailModal } from './StudentDetailModal';
@@ -94,6 +97,13 @@ export function AccueilView({
   const [batchPrintActive, setBatchPrintActive] = useState<boolean>(false);
   const [batchCardPrint, setBatchCardPrint] = useState<boolean>(false);
   const [batchCertRecords, setBatchCertRecords] = useState<EnrichedInscription[]>([]);
+  const [batchCardRecords, setBatchCardRecords] = useState<EnrichedInscription[]>([]);
+  const [printLoading, setPrintLoading] = useState<{
+    message: string;
+    processed?: number;
+    total?: number;
+  } | null>(null);
+  const printJobIdRef = useRef(0);
   const [deleteTarget, setDeleteTarget] = useState<EnrichedInscription | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState<boolean>(false);
 
@@ -387,53 +397,153 @@ export function AccueilView({
     setCertificateRow(result.record ?? row);
   };
 
-  const handlePrintSelectedCertificates = () => {
+  const cancelPrintPreparation = () => {
+    printJobIdRef.current++;
+    setPrintLoading(null);
+    setBatchPrintActive(false);
+    setBatchCardPrint(false);
+    setBatchCertRecords([]);
+    setBatchCardRecords([]);
+  };
+
+  const handlePrintSelectedCertificates = async () => {
     if (selectedRows.length === 0) return;
-    let nextDb = db;
-    const prepared: EnrichedInscription[] = [];
-    for (const target of selectedRows) {
-      const result = ensureCertificateIdentity(nextDb, target.idInscription);
-      nextDb = result.nextDb;
-      const record = result.record ?? target;
-      prepared.push(record);
-      registerCertificate({
-        token: result.token || record.certificateToken,
+    const jobId = ++printJobIdRef.current;
+    const total = selectedRows.length;
+
+    setPrintLoading({
+      message:
+        total > 1
+          ? `Chargement de l'état pour ${total.toLocaleString('fr-FR')} certificats...`
+          : "Chargement de l'état d'impression...",
+      processed: total > 1 ? 0 : undefined,
+      total: total > 1 ? total : undefined,
+    });
+    setBatchCardPrint(false);
+    setBatchCertRecords([]);
+    setBatchPrintActive(true);
+
+    await nextAnimationFrame();
+    if (printJobIdRef.current !== jobId) return;
+
+    const batch = ensureCertificateIdentitiesBatch(
+      db,
+      selectedRows.map((t) => t.idInscription)
+    );
+    const prepared = batch.records.length > 0 ? batch.records : selectedRows;
+    const issuedAt = new Date().toISOString();
+
+    registerCertificatesBatch(
+      prepared.map((record) => ({
+        token: record.certificateToken,
         idInscription: record.idInscription,
         idEtudiant: record.idEtudiant,
-        numeroCertificat: result.numeroCertificat || record.numeroCertificat,
+        numeroCertificat: record.numeroCertificat,
         nom: record.nom,
         prenom: record.prenom,
         mention: record.mention,
         niveau: record.niveau,
         annee: record.annee,
-        issuedAt: new Date().toISOString(),
-      });
+        issuedAt,
+      }))
+    );
+
+    if (batch.nextDb !== db) {
+      onUpdateDb(batch.nextDb, `${prepared.length} certificat(s) numéroté(s) et horodaté(s).`);
     }
-    if (nextDb !== db) {
-      onUpdateDb(nextDb, `${prepared.length} certificat(s) numéroté(s) et horodaté(s).`);
+
+    const RENDER_BATCH = 20;
+    if (prepared.length <= RENDER_BATCH) {
+      setBatchCertRecords(prepared);
+      await nextAnimationFrame();
+      await nextAnimationFrame();
+    } else {
+      for (let end = RENDER_BATCH; end < prepared.length + RENDER_BATCH; end += RENDER_BATCH) {
+        if (printJobIdRef.current !== jobId) return;
+        const clampedEnd = Math.min(end, prepared.length);
+        setBatchCertRecords(prepared.slice(0, clampedEnd));
+        setPrintLoading({
+          message: "Préparation des certificats pour l'impression...",
+          processed: clampedEnd,
+          total: prepared.length,
+        });
+        await nextAnimationFrame();
+      }
+      await nextAnimationFrame();
     }
-    setBatchCertRecords(prepared);
-    setBatchPrintActive(true);
-    setTimeout(() => {
-      window.print();
-    }, 80);
+
+    if (printJobIdRef.current !== jobId) return;
+    setPrintLoading(null);
+    await nextAnimationFrame();
+    if (printJobIdRef.current !== jobId) return;
+    window.print();
   };
 
-  const handlePrintSelectedCards = () => {
+  const handlePrintSelectedCards = async () => {
     if (selectedRows.length === 0) return;
+    const jobId = ++printJobIdRef.current;
+    const targets = selectedRows.slice(0, 100);
+    const total = targets.length;
+
+    setPrintLoading({
+      message:
+        total > 1
+          ? `Chargement de l'état pour ${total.toLocaleString('fr-FR')} cartes...`
+          : "Chargement de l'état d'impression...",
+      processed: total > 1 ? 0 : undefined,
+      total: total > 1 ? total : undefined,
+    });
     setBatchPrintActive(false);
+    setBatchCardRecords([]);
     setBatchCardPrint(true);
-    setTimeout(() => {
-      window.print();
-      setBatchCardPrint(false);
-    }, 80);
+
+    await nextAnimationFrame();
+    if (printJobIdRef.current !== jobId) return;
+
+    const RENDER_BATCH = 20;
+    if (targets.length <= RENDER_BATCH) {
+      setBatchCardRecords(targets);
+      await nextAnimationFrame();
+      await nextAnimationFrame();
+    } else {
+      for (let end = RENDER_BATCH; end < targets.length + RENDER_BATCH; end += RENDER_BATCH) {
+        if (printJobIdRef.current !== jobId) return;
+        const clampedEnd = Math.min(end, targets.length);
+        setBatchCardRecords(targets.slice(0, clampedEnd));
+        setPrintLoading({
+          message: "Préparation des cartes d'étudiant pour l'impression...",
+          processed: clampedEnd,
+          total: targets.length,
+        });
+        await nextAnimationFrame();
+      }
+      await nextAnimationFrame();
+    }
+
+    if (printJobIdRef.current !== jobId) return;
+    setPrintLoading(null);
+    await nextAnimationFrame();
+    if (printJobIdRef.current !== jobId) return;
+    window.print();
+    setBatchCardPrint(false);
   };
 
-  const handlePrintRoster = () => {
+  const handlePrintRoster = async () => {
     setBatchPrintActive(false);
     setBatchCardPrint(false);
     setCertificateRow(null);
-    setTimeout(() => window.print(), 40);
+    if (filteredRows.length > 150) {
+      setPrintLoading({
+        message: `Chargement de la liste (${filteredRows.length.toLocaleString('fr-FR')} étudiants)...`,
+      });
+      await nextAnimationFrame();
+      await nextAnimationFrame();
+      setPrintLoading(null);
+      await nextAnimationFrame();
+      window.print();
+    } else {
+      setTimeout(() => window.print(), 40);
+    }
   };
 
   const defaultAnneeId =
@@ -1173,10 +1283,10 @@ export function AccueilView({
       )}
 
       {/* Batch Student Card Print Area (recto / verso par étudiant) */}
-      {batchCardPrint && selectedRows.length > 0 && (
+      {batchCardPrint && batchCardRecords.length > 0 && (
         <div className="hidden print:block">
           <StudentCardPrintSheets
-            records={selectedRows.slice(0, 100)}
+            records={batchCardRecords}
             template={docTemplates.carte}
           />
         </div>
@@ -1407,6 +1517,14 @@ export function AccueilView({
           </div>
         </div>
       )}
+      <LoadingWaitModal
+        open={Boolean(printLoading)}
+        title="Veuillez patienter..."
+        message={printLoading?.message}
+        processed={printLoading?.processed}
+        total={printLoading?.total}
+        onCancel={cancelPrintPreparation}
+      />
     </div>
   );
 }

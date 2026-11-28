@@ -1285,6 +1285,95 @@ export function ensureCertificateIdentity(
   };
 }
 
+/**
+ * Version optimisée en lot de `ensureCertificateIdentity` :
+ * effectue un seul enrichissement et un seul clonage de la base,
+ * quelle que soit la taille du lot (évite le gel du navigateur sur fichiers lourds).
+ */
+export function ensureCertificateIdentitiesBatch(
+  db: ScolariteDatabase,
+  idInscriptions: number[]
+): {
+  nextDb: ScolariteDatabase;
+  records: EnrichedInscription[];
+  createdCount: number;
+} {
+  if (idInscriptions.length === 0) {
+    return { nextDb: db, records: [], createdCount: 0 };
+  }
+
+  const enrichedMap = new Map<number, EnrichedInscription>();
+  for (const row of enrichInscriptions(db)) {
+    enrichedMap.set(row.idInscription, row);
+  }
+
+  const idsNeedingIdentity = new Set<number>();
+  for (const id of idInscriptions) {
+    const existing = enrichedMap.get(id);
+    if (
+      existing &&
+      (!existing.certificateToken ||
+        !existing.numeroCertificat ||
+        !existing.dateDelivrance)
+    ) {
+      idsNeedingIdentity.add(id);
+    }
+  }
+
+  if (idsNeedingIdentity.size === 0) {
+    const records: EnrichedInscription[] = [];
+    for (const id of idInscriptions) {
+      const rec = enrichedMap.get(id);
+      if (rec) records.push(rec);
+    }
+    return { nextDb: db, records, createdCount: 0 };
+  }
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  let createdCount = 0;
+
+  const nextInscriptions = db.inscriptions.map((ins) => {
+    if (!idsNeedingIdentity.has(ins.id)) return ins;
+    const before = enrichedMap.get(ins.id);
+    if (!before) return ins;
+
+    const certificateToken = ins.certificateToken || generateCertificateToken();
+    const numeroCertificat =
+      ins.numeroCertificat || buildCertificateNumber(before);
+    const dateDelivrance = ins.dateDelivrance || todayIso;
+
+    createdCount++;
+    const updated = {
+      ...ins,
+      certificateToken,
+      numeroCertificat,
+      dateDelivrance,
+    };
+
+    enrichedMap.set(ins.id, {
+      ...before,
+      certificateToken,
+      numeroCertificat,
+      dateDelivrance,
+    });
+
+    return updated;
+  });
+
+  const nextDb: ScolariteDatabase = {
+    ...db,
+    inscriptions: nextInscriptions,
+  };
+
+  const records: EnrichedInscription[] = [];
+  for (const id of idInscriptions) {
+    const rec = enrichedMap.get(id);
+    if (rec) records.push(rec);
+  }
+
+  return { nextDb, records, createdCount };
+}
+
 export function loadCertificateRegistry(): CertificateTokenEntry[] {
   try {
     if (typeof localStorage === 'undefined') return [];
@@ -1307,18 +1396,32 @@ export function clearCertificateRegistry(): void {
 }
 
 export function registerCertificate(entry: CertificateTokenEntry): void {
+  registerCertificatesBatch([entry]);
+}
+
+/**
+ * Enregistre un lot de certificats émis en une seule lecture/écriture localStorage.
+ */
+export function registerCertificatesBatch(
+  entries: CertificateTokenEntry[]
+): void {
+  if (entries.length === 0) return;
   try {
     if (typeof localStorage === 'undefined') return;
-    const registry = loadCertificateRegistry().filter(
-      (item) =>
-        item.token !== entry.token &&
-        item.idInscription !== entry.idInscription
+    const tokenSet = new Set<string>();
+    const idSet = new Set<number>();
+    const dedupedNew: CertificateTokenEntry[] = [];
+    for (const entry of entries) {
+      if (idSet.has(entry.idInscription)) continue;
+      if (entry.token) tokenSet.add(entry.token);
+      idSet.add(entry.idInscription);
+      dedupedNew.push(entry);
+    }
+    const existing = loadCertificateRegistry().filter(
+      (item) => !tokenSet.has(item.token) && !idSet.has(item.idInscription)
     );
-    registry.unshift(entry);
-    localStorage.setItem(
-      CERT_REGISTRY_KEY,
-      JSON.stringify(registry.slice(0, 500))
-    );
+    const merged = [...dedupedNew, ...existing].slice(0, 500);
+    localStorage.setItem(CERT_REGISTRY_KEY, JSON.stringify(merged));
   } catch {
     // ignore registry errors
   }
