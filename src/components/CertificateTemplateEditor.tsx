@@ -602,23 +602,73 @@ export function CertificateTemplateEditor({
               )}
             </div>
 
-            <Field label="Logo principal (URL ou fichier)">
-              <div className="flex items-center gap-2">
+            <Field label="Logo principal">
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const file = e.dataTransfer.files?.[0];
+                  if (file && file.type.startsWith('image/')) {
+                    readImage(file, (url) =>
+                      patchSection('header', { logoUrl: url, showLogo: true })
+                    );
+                  }
+                }}
+                className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/70 space-y-2"
+              >
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => logoInputRef.current?.click()}
+                    title="Cliquer pour choisir le logo principal"
+                    className="h-12 w-12 shrink-0 rounded-md border border-slate-200 bg-white flex items-center justify-center overflow-hidden hover:border-blue-400 transition-colors"
+                  >
+                    {template.header.logoUrl ? (
+                      <img
+                        src={template.header.logoUrl}
+                        alt="Logo principal"
+                        className="h-full w-full object-contain p-1"
+                      />
+                    ) : (
+                      <ImageIcon className="w-5 h-5 text-slate-300" />
+                    )}
+                  </button>
+                  <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => logoInputRef.current?.click()}
+                      className="px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 inline-flex items-center gap-1.5 shrink-0 transition-colors"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      {template.header.logoUrl
+                        ? 'Changer le logo'
+                        : 'Ajouter un logo'}
+                    </button>
+                    {template.header.logoUrl && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          patchSection('header', { logoUrl: '' })
+                        }
+                        title="Retirer le logo principal"
+                        className="px-2 py-1.5 text-[11px] font-medium text-red-700 bg-white border border-red-200 rounded-md hover:bg-red-50 inline-flex items-center gap-1 shrink-0 transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" /> Retirer
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <input
                   type="text"
                   value={template.header.logoUrl}
                   onChange={(e) =>
                     patchSection('header', { logoUrl: e.target.value })
                   }
-                  className={`${inputClass} font-mono`}
+                  placeholder="URL du logo ou glissez-déposez une image..."
+                  className={`${inputClass} font-mono text-[11px]`}
                 />
-                <button
-                  type="button"
-                  onClick={() => logoInputRef.current?.click()}
-                  className="px-2.5 py-1.5 text-[11px] font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 inline-flex items-center gap-1 shrink-0"
-                >
-                  <Upload className="w-3 h-3" /> Importer
-                </button>
                 <input
                   ref={logoInputRef}
                   type="file"
@@ -639,7 +689,66 @@ export function CertificateTemplateEditor({
             {kind === 'certificat' && (
               <>
                 <Field label="Logo de la faculté (secours si la faculté n’a pas de logo)">
-                  <div className="flex items-center gap-2">
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files?.[0];
+                      if (file && file.type.startsWith('image/')) {
+                        readImage(file, (url) =>
+                          patchSection('header', {
+                            secondaryLogoUrl: url,
+                            showSecondaryLogo: true,
+                          })
+                        );
+                      }
+                    }}
+                    className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/70 space-y-2"
+                  >
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => secondaryLogoInputRef.current?.click()}
+                        title="Cliquer pour choisir le logo de la faculté"
+                        className="h-12 w-12 shrink-0 rounded-md border border-slate-200 bg-white flex items-center justify-center overflow-hidden hover:border-blue-400 transition-colors"
+                      >
+                        {template.header.secondaryLogoUrl ? (
+                          <img
+                            src={template.header.secondaryLogoUrl}
+                            alt="Logo faculté"
+                            className="h-full w-full object-contain p-1"
+                          />
+                        ) : (
+                          <ImageIcon className="w-5 h-5 text-slate-300" />
+                        )}
+                      </button>
+                      <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => secondaryLogoInputRef.current?.click()}
+                          className="px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 inline-flex items-center gap-1.5 shrink-0 transition-colors"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          {template.header.secondaryLogoUrl
+                            ? 'Changer le logo'
+                            : 'Ajouter un logo'}
+                        </button>
+                        {template.header.secondaryLogoUrl && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              patchSection('header', { secondaryLogoUrl: '' })
+                            }
+                            title="Retirer le logo secondaire"
+                            className="px-2 py-1.5 text-[11px] font-medium text-red-700 bg-white border border-red-200 rounded-md hover:bg-red-50 inline-flex items-center gap-1 shrink-0 transition-colors"
+                          >
+                            <Trash2 className="w-3 h-3" /> Retirer
+                          </button>
+                        )}
+                      </div>
+                    </div>
                     <input
                       type="text"
                       value={template.header.secondaryLogoUrl}
@@ -648,15 +757,9 @@ export function CertificateTemplateEditor({
                           secondaryLogoUrl: e.target.value,
                         })
                       }
-                      className={`${inputClass} font-mono`}
+                      placeholder="URL du logo ou glissez-déposez une image..."
+                      className={`${inputClass} font-mono text-[11px]`}
                     />
-                    <button
-                      type="button"
-                      onClick={() => secondaryLogoInputRef.current?.click()}
-                      className="px-2.5 py-1.5 text-[11px] font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 inline-flex items-center gap-1 shrink-0"
-                    >
-                      <Upload className="w-3 h-3" /> Importer
-                    </button>
                     <input
                       ref={secondaryLogoInputRef}
                       type="file"

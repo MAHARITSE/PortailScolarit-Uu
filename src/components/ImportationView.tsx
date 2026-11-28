@@ -2,6 +2,7 @@ import { ChangeEvent, useMemo, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
+  Check,
   CheckCircle2,
   Download,
   FileSpreadsheet,
@@ -11,8 +12,12 @@ import {
 import {
   commitExcelImport,
   downloadExcelTemplate,
+  EXCEL_IMPORT_FIELDS,
+  ExcelHeaderInspection,
   ExcelRowStatus,
+  formatDateFR,
   getWorkbookSheetNames,
+  inspectExcelHeaders,
   ParsedExcelRow,
   parseExcelWorkbook,
 } from '../services/database';
@@ -36,6 +41,8 @@ export function ImportationView({
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string>('');
   const [rows, setRows] = useState<ParsedExcelRow[]>([]);
+  const [headerInspection, setHeaderInspection] =
+    useState<ExcelHeaderInspection | null>(null);
   const [statusFilter, setStatusFilter] = useState<'ALL' | ExcelRowStatus>(
     'ALL'
   );
@@ -55,11 +62,13 @@ export function ImportationView({
       await nextAnimationFrame();
       const sheets = getWorkbookSheetNames(buffer);
       const firstSheet = sheets[0] ?? '';
+      const inspection = inspectExcelHeaders(buffer, firstSheet);
       const parsed = parseExcelWorkbook(buffer, firstSheet, db);
       setFileBuffer(buffer);
       setFileName(file.name);
       setSheetNames(sheets);
       setSelectedSheet(firstSheet);
+      setHeaderInspection(inspection);
       setRows(parsed);
       setStatusFilter('ALL');
       setImportReport(null);
@@ -75,6 +84,7 @@ export function ImportationView({
     setLoadingMessage(`Analyse de la feuille "${sheet}" en cours...`);
     try {
       await nextAnimationFrame();
+      setHeaderInspection(inspectExcelHeaders(fileBuffer, sheet));
       setRows(parseExcelWorkbook(fileBuffer, sheet, db));
       setStatusFilter('ALL');
       setImportReport(null);
@@ -127,12 +137,24 @@ export function ImportationView({
       onUpdateDb(result.nextDb, msg);
       setImportReport(msg);
       setRows([]);
+      setHeaderInspection(null);
       setFileBuffer(null);
       setSheetNames([]);
     } finally {
       setLoadingMessage(null);
     }
   };
+
+  const detectedFieldSet = useMemo(
+    () => new Set(headerInspection?.detectedFields ?? []),
+    [headerInspection]
+  );
+
+  const detectedCount = useMemo(
+    () =>
+      EXCEL_IMPORT_FIELDS.filter((f) => detectedFieldSet.has(f.key)).length,
+    [detectedFieldSet]
+  );
 
   return (
     <div className="space-y-6">
@@ -147,7 +169,7 @@ export function ImportationView({
                 Importation Excel / CSV
               </h2>
               <p className="text-xs text-slate-500">
-                Support multi-feuilles, détection automatique des entêtes (dont téléphone en colonne H) et gestion des réinscriptions / doublons
+                Support multi-feuilles, détection automatique des 23 champs étudiant et gestion des réinscriptions / doublons
               </p>
             </div>
           </div>
@@ -158,7 +180,7 @@ export function ImportationView({
             className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 inline-flex items-center gap-1.5"
           >
             <Download className="w-4 h-4" />
-            Télécharger le modèle Excel
+            Télécharger le modèle Excel (23 colonnes)
           </button>
         </div>
 
@@ -168,8 +190,9 @@ export function ImportationView({
             Année de travail en cours :{' '}
             <strong className="font-mono tabular-nums">{anneeActive || '—'}</strong>.
             Les inscriptions importées conservent l&apos;année indiquée dans la
-            colonne <span className="font-mono">Annee</span> ; utilisez le
-            sélecteur d&apos;année de l&apos;en-tête pour consulter une autre année.
+            colonne <span className="font-mono">Année Universitaire</span> ;
+            utilisez le sélecteur d&apos;année de l&apos;en-tête pour consulter
+            une autre année.
           </p>
         </div>
 
@@ -181,8 +204,9 @@ export function ImportationView({
               ? `Fichier chargé : ${fileName}`
               : 'Cliquez pour sélectionner un fichier .xlsx, .xls ou .csv'}
           </p>
-          <p className="text-xs text-slate-500 mt-1">
-            Colonnes reconnues : Ref, Num Inscr, NOM, PRÉNOMS, DATE DE NAISSANCE, SEXE, Téléphone, CIN, Faculte, Domaine, Mention, Grade, Niveau, Parcours, Annee.
+          <p className="text-xs text-slate-500 mt-1.5 max-w-4xl mx-auto leading-relaxed">
+            Colonnes reconnues ({EXCEL_IMPORT_FIELDS.length}) :{' '}
+            {EXCEL_IMPORT_FIELDS.map((f) => f.label).join(', ')}.
           </p>
           <input
             type="file"
@@ -196,6 +220,45 @@ export function ImportationView({
           <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-md text-xs text-emerald-800 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{importReport}</span>
+          </div>
+        )}
+
+        {/* Detected Columns Summary */}
+        {headerInspection && rows.length > 0 && (
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-semibold text-slate-800">
+                Colonnes détectées dans la feuille ({detectedCount} /{' '}
+                {EXCEL_IMPORT_FIELDS.length})
+              </span>
+              {headerInspection.unrecognizedHeaders.length > 0 && (
+                <span className="text-[11px] text-amber-700">
+                  Colonnes ignorées :{' '}
+                  {headerInspection.unrecognizedHeaders.join(', ')}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {EXCEL_IMPORT_FIELDS.map((field) => {
+                const found = detectedFieldSet.has(field.key);
+                return (
+                  <span
+                    key={field.key}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                      found
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : field.required
+                          ? 'bg-red-50 text-red-700 border-red-200'
+                          : 'bg-white text-slate-400 border-slate-200'
+                    }`}
+                  >
+                    {found && <Check className="w-3 h-3 shrink-0" />}
+                    {field.label}
+                    {field.required && !found && ' *'}
+                  </span>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -307,23 +370,25 @@ export function ImportationView({
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 bg-slate-50 z-10">
                 <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                  <th className="py-2.5 px-4">Ligne</th>
-                  <th className="py-2.5 px-4">Statut</th>
-                  <th className="py-2.5 px-4">Réf / N° Inscr.</th>
-                  <th className="py-2.5 px-4">Nom &amp; Prénom</th>
-                  <th className="py-2.5 px-4">Sexe</th>
-                  <th className="py-2.5 px-4">CIN / Tél</th>
-                  <th className="py-2.5 px-4">Formation &amp; Année</th>
-                  <th className="py-2.5 px-4">Observation</th>
+                  <th className="py-2.5 px-3">Ligne</th>
+                  <th className="py-2.5 px-3">Statut</th>
+                  <th className="py-2.5 px-3">Réf / Inscr. (Adm. &amp; Péd.)</th>
+                  <th className="py-2.5 px-3">Identité &amp; Naissance</th>
+                  <th className="py-2.5 px-3">Sexe</th>
+                  <th className="py-2.5 px-3">CIN &amp; Délivrance</th>
+                  <th className="py-2.5 px-3">Contact &amp; Adresse</th>
+                  <th className="py-2.5 px-3">Filiation</th>
+                  <th className="py-2.5 px-3">Formation &amp; Année</th>
+                  <th className="py-2.5 px-3">Observation</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
                 {displayedRows.slice(0, 250).map((r) => (
-                  <tr key={r.rowIndex} className="hover:bg-slate-50/70">
-                    <td className="py-2.5 px-4 font-mono text-slate-400">
+                  <tr key={r.rowIndex} className="hover:bg-slate-50/70 align-top">
+                    <td className="py-2.5 px-3 font-mono text-slate-400">
                       #{r.rowIndex}
                     </td>
-                    <td className="py-2.5 px-4">
+                    <td className="py-2.5 px-3 whitespace-nowrap">
                       {r.status === 'new' && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">
                           <CheckCircle2 className="w-3 h-3" /> Nouveau
@@ -345,20 +410,78 @@ export function ImportationView({
                         </span>
                       )}
                     </td>
-                    <td className="py-2.5 px-4 font-mono text-slate-700">
-                      {r.reference || '—'} / {r.numInscription || '—'}
+                    <td className="py-2.5 px-3 font-mono text-[11px] text-slate-700 space-y-0.5">
+                      <div>Réf : {r.reference || '—'}</div>
+                      <div>Adm : {r.numInscription || '—'}</div>
+                      {r.numInscriptionPedagogique && (
+                        <div className="text-blue-700">
+                          Péd : {r.numInscriptionPedagogique}
+                        </div>
+                      )}
                     </td>
-                    <td className="py-2.5 px-4 font-semibold text-slate-900">
-                      {r.nom} {r.prenom}
+                    <td className="py-2.5 px-3">
+                      <div className="font-semibold text-slate-900">
+                        {r.nom} {r.prenom}
+                      </div>
+                      {(r.dateNaissance || r.lieuNaissance) && (
+                        <div className="text-[11px] text-slate-500">
+                          {r.dateNaissance ? formatDateFR(r.dateNaissance) : '—'}
+                          {r.lieuNaissance ? ` à ${r.lieuNaissance}` : ''}
+                        </div>
+                      )}
                     </td>
-                    <td className="py-2.5 px-4 font-mono">{r.sexe}</td>
-                    <td className="py-2.5 px-4 text-slate-600 font-mono text-[11px]">
-                      {r.numeroCin || '—'} · {r.telephone || '—'}
+                    <td className="py-2.5 px-3 font-mono">{r.sexe}</td>
+                    <td className="py-2.5 px-3 text-slate-600 text-[11px] space-y-0.5">
+                      <div className="font-mono">{r.numeroCin || '—'}</div>
+                      {(r.dateCin || r.lieuDelivrance) && (
+                        <div className="text-slate-500">
+                          {r.dateCin ? formatDateFR(r.dateCin) : '—'}
+                          {r.lieuDelivrance ? ` · ${r.lieuDelivrance}` : ''}
+                        </div>
+                      )}
                     </td>
-                    <td className="py-2.5 px-4 text-slate-700">
-                      {r.niveau} {r.mention} · {r.annee}
+                    <td className="py-2.5 px-3 text-slate-600 text-[11px] space-y-0.5 max-w-[200px]">
+                      <div className="font-mono">{r.telephone || '—'}</div>
+                      {r.email && (
+                        <div className="text-blue-700 truncate" title={r.email}>
+                          {r.email}
+                        </div>
+                      )}
+                      {r.adresse && (
+                        <div className="text-slate-500 truncate" title={r.adresse}>
+                          {r.adresse}
+                        </div>
+                      )}
                     </td>
-                    <td className="py-2.5 px-4 text-slate-500">
+                    <td className="py-2.5 px-3 text-slate-600 text-[11px] space-y-0.5 max-w-[180px]">
+                      {r.nomPere || r.nomMere ? (
+                        <>
+                          {r.nomPere && (
+                            <div className="truncate" title={r.nomPere}>
+                              P : {r.nomPere}
+                            </div>
+                          )}
+                          {r.nomMere && (
+                            <div className="truncate" title={r.nomMere}>
+                              M : {r.nomMere}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-700 text-[11px] space-y-0.5">
+                      <div className="font-medium text-slate-900">
+                        {r.niveau} ({r.grade}) · {r.mention}
+                      </div>
+                      <div className="text-slate-500">
+                        {r.faculte} · {r.domaine}
+                        {r.parcours ? ` · ${r.parcours}` : ''}
+                      </div>
+                      <div className="font-mono text-blue-700">{r.annee}</div>
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-500">
                       {r.error ||
                         r.warning ||
                         (r.status === 'duplicate_inscription'

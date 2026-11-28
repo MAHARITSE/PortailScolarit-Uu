@@ -53,7 +53,8 @@ export const DEFAULT_CARD_FRONT_FIELDS: string[] = [
 ];
 
 export const CARD_FRONT_FIELD_OPTIONS: { id: string; label: string }[] = [
-  { id: 'numInscription', label: 'N° inscription' },
+  { id: 'numInscription', label: 'N° inscr. administrative' },
+  { id: 'numInscriptionPedagogique', label: 'N° inscr. pédagogique' },
   { id: 'niveau', label: 'Niveau' },
   { id: 'mention', label: 'Mention' },
   { id: 'dateNaissance', label: 'Date de naissance' },
@@ -63,6 +64,8 @@ export const CARD_FRONT_FIELD_OPTIONS: { id: string; label: string }[] = [
   { id: 'grade', label: 'Grade' },
   { id: 'faculte', label: 'Faculté / Établissement' },
   { id: 'telephone', label: 'Téléphone' },
+  { id: 'adresse', label: 'Adresse exacte' },
+  { id: 'email', label: 'E-mail' },
   { id: 'numeroCin', label: 'N° CIN' },
   { id: 'nationalite', label: 'Nationalité' },
   { id: 'reference', label: 'Référence' },
@@ -532,6 +535,7 @@ export function enrichInscriptions(db: ScolariteDatabase): EnrichedInscription[]
       idParcours: parcours?.id ?? null,
       reference: ins.reference,
       numInscription: ins.numInscription,
+      numInscriptionPedagogique: ins.numInscriptionPedagogique ?? '',
       nom: etu.nom,
       prenom: etu.prenom,
       dateNaissance: etu.dateNaissance,
@@ -539,6 +543,8 @@ export function enrichInscriptions(db: ScolariteDatabase): EnrichedInscription[]
       sexe: etu.sexe,
       sexeNormalized: normalizeSex(etu.sexe),
       telephone: etu.telephone,
+      adresse: etu.adresse ?? '',
+      email: etu.email ?? '',
       numeroCin: etu.numeroCin,
       dateCin: etu.dateCin,
       lieuDelivrance: etu.lieuDelivrance,
@@ -967,7 +973,12 @@ export const CERTIFICATE_VARIABLES: { key: string; label: string }[] = [
   { key: 'classe', label: 'Classe / Niveau' },
   { key: 'mention', label: 'Mention' },
   { key: 'annee_scolaire', label: 'Année scolaire' },
-  { key: 'matricule', label: 'Matricule' },
+  { key: 'matricule', label: 'N° inscr. administrative / Matricule' },
+  { key: 'num_inscription_pedagogique', label: 'N° inscription pédagogique' },
+  { key: 'adresse', label: 'Adresse exacte' },
+  { key: 'email', label: 'E-mail' },
+  { key: 'grade', label: 'Grade' },
+  { key: 'parcours', label: 'Parcours' },
   { key: 'numero_certificat', label: 'N° de certificat' },
   { key: 'date_delivrance', label: 'Date de délivrance' },
   { key: 'faculte', label: 'Établissement' },
@@ -1108,6 +1119,12 @@ export function buildCertificateVariables(
     annee_scolaire: formatStd('annee', record.annee),
     annee: formatStd('annee', record.annee),
     matricule: formatStd('matricule', record.numInscription),
+    num_inscription_administrative: formatStd('matricule', record.numInscription),
+    num_inscription_pedagogique: record.numInscriptionPedagogique || '',
+    adresse: record.adresse || '',
+    email: record.email || '',
+    grade: record.grade || '',
+    parcours: record.parcours === '— Aucun —' ? '' : record.parcours,
     numero_certificat: numero,
     date_delivrance: formatStd('dateDelivrance', delivrance),
     faculte: formatStd('faculte', record.faculte),
@@ -2185,6 +2202,8 @@ export function getDocumentRowValue(
       return record.annee;
     case 'numInscription':
       return record.numInscription || '—';
+    case 'numInscriptionPedagogique':
+      return record.numInscriptionPedagogique || '—';
     case 'reference':
       return record.reference || '—';
     case 'dateNaissance':
@@ -2193,6 +2212,10 @@ export function getDocumentRowValue(
       return record.lieuNaissance || '—';
     case 'telephone':
       return record.telephone || '—';
+    case 'adresse':
+      return record.adresse || '—';
+    case 'email':
+      return record.email || '—';
     case 'numeroCin':
       return record.numeroCin || '—';
     case 'nationalite':
@@ -2235,6 +2258,7 @@ export function getSampleInscription(db: ScolariteDatabase): EnrichedInscription
     idParcours: null,
     reference: '000000',
     numInscription: '000000',
+    numInscriptionPedagogique: 'PED-2024-0001',
     nom: 'RAKOTO',
     prenom: 'Naivo',
     dateNaissance: '2003-04-12',
@@ -2242,6 +2266,8 @@ export function getSampleInscription(db: ScolariteDatabase): EnrichedInscription
     sexe: 'M',
     sexeNormalized: 'M',
     telephone: '034 12 345 67',
+    adresse: 'Lot II A 14, Toliara',
+    email: 'naivo.rakoto@univ-toliara.mg',
     numeroCin: '501011012345',
     dateCin: '2021-06-01',
     lieuDelivrance: 'TOLIARA',
@@ -2299,6 +2325,8 @@ export function mergeDuplicateStudents(
   if (!keep.dateNaissance && rem.dateNaissance) keep.dateNaissance = rem.dateNaissance;
   if (!keep.lieuNaissance.trim() && rem.lieuNaissance.trim()) keep.lieuNaissance = rem.lieuNaissance;
   if (!keep.telephone.trim() && rem.telephone.trim()) keep.telephone = rem.telephone;
+  if (!keep.adresse?.trim() && rem.adresse?.trim()) keep.adresse = rem.adresse;
+  if (!keep.email?.trim() && rem.email?.trim()) keep.email = rem.email;
   if (!keep.numeroCin.trim() && rem.numeroCin.trim()) keep.numeroCin = rem.numeroCin;
   if (!keep.dateCin && rem.dateCin) keep.dateCin = rem.dateCin;
   if (!keep.lieuDelivrance.trim() && rem.lieuDelivrance.trim()) keep.lieuDelivrance = rem.lieuDelivrance;
@@ -2825,8 +2853,12 @@ export function searchStudentsForAssistedEntry(
     const numInsNorm = normalizeAssistedSearchText(
       lastInscription?.numInscription
     );
+    const numPedNorm = normalizeAssistedSearchText(
+      lastInscription?.numInscriptionPedagogique
+    );
+    const emailNorm = normalizeAssistedSearchText(etudiant.email);
 
-    const haystack = `${fullNorm} ${cinSpaced} ${cinCompact} ${refNorm} ${numInsNorm}`;
+    const haystack = `${fullNorm} ${cinSpaced} ${cinCompact} ${refNorm} ${numInsNorm} ${numPedNorm} ${emailNorm}`;
     const matchesAllTokens = tokens.every((tok) => haystack.includes(tok));
     const matchesCompactCin =
       qCompact.length >= 4 && cinCompact.includes(qCompact);
@@ -2940,25 +2972,30 @@ export function exportInscriptionsToXlsx(
   anneeLabel: string
 ): void {
   const exportRows = rows.map((r) => ({
-    Ref: r.reference,
-    'Num Inscr': r.numInscription,
-    NOM: r.nom,
-    PRÉNOMS: r.prenom,
-    'DATE DE NAISSANCE': formatDateFR(r.dateNaissance),
-    Lieu_De_Naissance: r.lieuNaissance,
-    SEXE: r.sexe,
-    Téléphone: r.telephone,
+    'N° de référence': r.reference,
+    'N° inscription pédagogique': r.numInscriptionPedagogique,
+    'N° inscription administrative': r.numInscription,
+    Nom: r.nom,
+    Prénom: r.prenom,
+    'Date de naissance': formatDateFR(r.dateNaissance),
+    'Lieu de naissance': r.lieuNaissance,
+    Sexe: r.sexe,
     CIN: r.numeroCin,
-    'Date delivrance': formatDateFR(r.dateCin),
-    Lieu_Delivrance: r.lieuDelivrance,
-    NATIONALITÉ: r.nationalite,
-    Faculte: r.faculte,
+    'Date de délivrance': formatDateFR(r.dateCin),
+    'Lieu de délivrance': r.lieuDelivrance,
+    Téléphone: r.telephone,
+    'Adresse exacte': r.adresse,
+    'E-mail': r.email,
+    'Nom de Père': r.nomPere,
+    'Nom de Mère': r.nomMere,
+    Nationalité: r.nationalite,
+    'Faculté/Institut': r.faculte,
     Domaine: r.domaine,
     Mention: r.mention,
+    Parcours: r.parcours === '— Aucun —' ? '' : r.parcours,
     Grade: r.grade,
     Niveau: r.niveau,
-    Parcours: r.parcours === '— Aucun —' ? '' : r.parcours,
-    Annee: r.annee,
+    'Année Universitaire': r.annee,
   }));
 
   const ws = XLSX.utils.json_to_sheet(exportRows);
@@ -2977,25 +3014,30 @@ export function exportInscriptionsToCsv(
   anneeLabel: string
 ): void {
   const headers = [
-    'Ref',
-    'Num Inscr',
-    'NOM',
-    'PRÉNOMS',
-    'DATE DE NAISSANCE',
-    'Lieu_De_Naissance',
-    'SEXE',
-    'Téléphone',
+    'N° de référence',
+    'N° inscription pédagogique',
+    'N° inscription administrative',
+    'Nom',
+    'Prénom',
+    'Date de naissance',
+    'Lieu de naissance',
+    'Sexe',
     'CIN',
-    'Date delivrance',
-    'Lieu_Delivrance',
-    'NATIONALITÉ',
-    'Faculte',
+    'Date de délivrance',
+    'Lieu de délivrance',
+    'Téléphone',
+    'Adresse exacte',
+    'E-mail',
+    'Nom de Père',
+    'Nom de Mère',
+    'Nationalité',
+    'Faculté/Institut',
     'Domaine',
     'Mention',
+    'Parcours',
     'Grade',
     'Niveau',
-    'Parcours',
-    'Annee',
+    'Année Universitaire',
   ];
 
   const escapeCsv = (val: string) => {
@@ -3008,23 +3050,28 @@ export function exportInscriptionsToCsv(
     ...rows.map((r) =>
       [
         r.reference,
+        r.numInscriptionPedagogique,
         r.numInscription,
         r.nom,
         r.prenom,
         formatDateFR(r.dateNaissance),
         r.lieuNaissance,
         r.sexe,
-        r.telephone,
         r.numeroCin,
         formatDateFR(r.dateCin),
         r.lieuDelivrance,
+        r.telephone,
+        r.adresse,
+        r.email,
+        r.nomPere,
+        r.nomMere,
         r.nationalite,
         r.faculte,
         r.domaine,
         r.mention,
+        r.parcours === '— Aucun —' ? '' : r.parcours,
         r.grade,
         r.niveau,
-        r.parcours === '— Aucun —' ? '' : r.parcours,
         r.annee,
       ]
         .map(escapeCsv)
@@ -3050,16 +3097,52 @@ export function exportInscriptionsToCsv(
 
 export type ExcelRowStatus = 'new' | 'reinscription' | 'duplicate_inscription' | 'error';
 
+export interface ExcelImportFieldInfo {
+  key: string;
+  label: string;
+  required?: boolean;
+}
+
+/** Les 23 informations complètes d'un étudiant reconnues lors de l'importation Excel. */
+export const EXCEL_IMPORT_FIELDS: ExcelImportFieldInfo[] = [
+  { key: 'reference', label: 'N° de référence' },
+  { key: 'numInscriptionPedagogique', label: 'N° inscription pédagogique' },
+  { key: 'numInscription', label: 'N° inscription administrative' },
+  { key: 'nom', label: 'Nom', required: true },
+  { key: 'prenom', label: 'Prénom' },
+  { key: 'dateNaissance', label: 'Date de naissance' },
+  { key: 'lieuNaissance', label: 'Lieu de naissance' },
+  { key: 'sexe', label: 'Sexe' },
+  { key: 'numeroCin', label: 'CIN' },
+  { key: 'dateCin', label: 'Date de délivrance' },
+  { key: 'lieuDelivrance', label: 'Lieu de délivrance' },
+  { key: 'telephone', label: 'Téléphone' },
+  { key: 'adresse', label: 'Adresse exacte' },
+  { key: 'email', label: 'E-mail' },
+  { key: 'nomPere', label: 'Nom de Père' },
+  { key: 'nomMere', label: 'Nom de Mère' },
+  { key: 'faculte', label: 'Faculté/Institut', required: true },
+  { key: 'domaine', label: 'Domaine', required: true },
+  { key: 'mention', label: 'Mention', required: true },
+  { key: 'parcours', label: 'Parcours' },
+  { key: 'grade', label: 'Grade' },
+  { key: 'niveau', label: 'Niveau', required: true },
+  { key: 'annee', label: 'Année Universitaire', required: true },
+];
+
 export interface ParsedExcelRow {
   rowIndex: number;
   reference: string;
   numInscription: string;
+  numInscriptionPedagogique: string;
   nom: string;
   prenom: string;
   dateNaissance: string;
   lieuNaissance: string;
   sexe: string;
   telephone: string;
+  adresse: string;
+  email: string;
   numeroCin: string;
   dateCin: string;
   lieuDelivrance: string;
@@ -3080,6 +3163,12 @@ export interface ParsedExcelRow {
   warning?: string;
 }
 
+export interface ExcelHeaderInspection {
+  detectedFields: string[];
+  unrecognizedHeaders: string[];
+  looksLikeHeader: boolean;
+}
+
 export function getWorkbookSheetNames(buffer: ArrayBuffer): string[] {
   const wb = XLSX.read(buffer, { type: 'array' });
   return wb.SheetNames;
@@ -3096,48 +3185,267 @@ function normalizeHeaderKey(header: unknown): string {
 }
 
 const HEADER_ALIASES: Record<string, string> = {
+  // N° de référence
   ref: 'reference',
   reference: 'reference',
+  n_reference: 'reference',
+  n_de_reference: 'reference',
+  no_reference: 'reference',
+  no_de_reference: 'reference',
+  num_ref: 'reference',
+  num_reference: 'reference',
+  numero_reference: 'reference',
+  numero_de_reference: 'reference',
+  ref_quittance: 'reference',
+  reference_quittance: 'reference',
+
+  // N° inscription pédagogique
+  n_inscription_pedagogique: 'numInscriptionPedagogique',
+  n_d_inscription_pedagogique: 'numInscriptionPedagogique',
+  no_inscription_pedagogique: 'numInscriptionPedagogique',
+  no_d_inscription_pedagogique: 'numInscriptionPedagogique',
+  num_inscription_pedagogique: 'numInscriptionPedagogique',
+  numero_inscription_pedagogique: 'numInscriptionPedagogique',
+  numero_d_inscription_pedagogique: 'numInscriptionPedagogique',
+  num_inscr_pedagogique: 'numInscriptionPedagogique',
+  num_inscr_ped: 'numInscriptionPedagogique',
+  n_inscr_pedagogique: 'numInscriptionPedagogique',
+  n_inscr_ped: 'numInscriptionPedagogique',
+  inscription_pedagogique: 'numInscriptionPedagogique',
+  inscr_pedagogique: 'numInscriptionPedagogique',
+
+  // N° inscription administrative (matricule)
+  n_inscription_administrative: 'numInscription',
+  n_d_inscription_administrative: 'numInscription',
+  no_inscription_administrative: 'numInscription',
+  no_d_inscription_administrative: 'numInscription',
+  num_inscription_administrative: 'numInscription',
+  numero_inscription_administrative: 'numInscription',
+  numero_d_inscription_administrative: 'numInscription',
+  num_inscr_administrative: 'numInscription',
+  num_inscr_admin: 'numInscription',
+  n_inscr_administrative: 'numInscription',
+  n_inscr_admin: 'numInscription',
+  inscription_administrative: 'numInscription',
+  inscr_administrative: 'numInscription',
   num_inscr: 'numInscription',
   num_inscription: 'numInscription',
+  n_inscription: 'numInscription',
+  n_d_inscription: 'numInscription',
   numero_inscription: 'numInscription',
   numero_d_inscription: 'numInscription',
+  matricule: 'numInscription',
+
+  // Identité
   nom: 'nom',
+  nom_de_famille: 'nom',
+  nom_etudiant: 'nom',
   prenoms: 'prenom',
   prenom: 'prenom',
+  prenom_s: 'prenom',
   date_de_naissance: 'dateNaissance',
   date_naissance: 'dateNaissance',
+  date_naiss: 'dateNaissance',
+  ne_e_le: 'dateNaissance',
+  ne_le: 'dateNaissance',
   lieu_de_naissance: 'lieuNaissance',
   lieu_naissance: 'lieuNaissance',
+  lieu_naiss: 'lieuNaissance',
   sexe: 'sexe',
   genre: 'sexe',
+
+  // Contact & Adresse
   telephone: 'telephone',
   tel: 'telephone',
   contact: 'telephone',
+  numero_telephone: 'telephone',
+  num_telephone: 'telephone',
+  n_telephone: 'telephone',
+  num_tel: 'telephone',
+  n_tel: 'telephone',
+  telephone_etudiant: 'telephone',
+  mobile: 'telephone',
+  portable: 'telephone',
+  adresse: 'adresse',
+  adresse_exacte: 'adresse',
+  adresse_etudiant: 'adresse',
+  adresse_complete: 'adresse',
+  domicile: 'adresse',
+  residence: 'adresse',
+  e_mail: 'email',
+  email: 'email',
+  mail: 'email',
+  adresse_email: 'email',
+  adresse_e_mail: 'email',
+  adresse_mail: 'email',
+  courriel: 'email',
+
+  // CIN & Délivrance
   cin: 'numeroCin',
   numero_cin: 'numeroCin',
+  num_cin: 'numeroCin',
+  n_cin: 'numeroCin',
+  no_cin: 'numeroCin',
+  n_de_cin: 'numeroCin',
   date_delivrance: 'dateCin',
+  date_de_delivrance: 'dateCin',
   date_cin: 'dateCin',
+  date_delivrance_cin: 'dateCin',
+  date_de_delivrance_cin: 'dateCin',
+  delivre_le: 'dateCin',
   lieu_delivrance: 'lieuDelivrance',
+  lieu_de_delivrance: 'lieuDelivrance',
   delivrance_cin: 'lieuDelivrance',
+  lieu_delivrance_cin: 'lieuDelivrance',
+  lieu_de_delivrance_cin: 'lieuDelivrance',
+  delivre_a: 'lieuDelivrance',
   nationalite: 'nationalite',
+
+  // Filiation
   pere: 'nomPere',
   nom_pere: 'nomPere',
+  nom_de_pere: 'nomPere',
   nom_du_pere: 'nomPere',
+  fils_de: 'nomPere',
   mere: 'nomMere',
   nom_mere: 'nomMere',
+  nom_de_mere: 'nomMere',
   nom_de_la_mere: 'nomMere',
+
+  // Cursus académique
   faculte: 'faculte',
+  faculte_institut: 'faculte',
+  faculte_ou_institut: 'faculte',
+  faculte_etablissement: 'faculte',
+  institut: 'faculte',
   etablissement: 'faculte',
   institution: 'faculte',
+  ecole: 'faculte',
+  ufr: 'faculte',
   domaine: 'domaine',
   mention: 'mention',
-  grade: 'grade',
-  niveau: 'niveau',
+  filiere: 'mention',
   parcours: 'parcours',
+  specialite: 'parcours',
+  option: 'parcours',
+  grade: 'grade',
+  drade: 'grade',
+  cycle: 'grade',
+  niveau: 'niveau',
+  classe: 'niveau',
+  niveau_etude: 'niveau',
+  niveau_d_etude: 'niveau',
   annee: 'annee',
   annee_universitaire: 'annee',
+  annee_scolaire: 'annee',
+  annee_univ: 'annee',
+  annee_academique: 'annee',
 };
+
+const LEGACY_POSITIONAL_COLUMNS: Record<string, number> = {
+  reference: 0,
+  numInscription: 1,
+  nom: 2,
+  prenom: 3,
+  dateNaissance: 4,
+  lieuNaissance: 5,
+  sexe: 6,
+  telephone: 7,
+  numeroCin: 8,
+  dateCin: 9,
+  lieuDelivrance: 10,
+  nationalite: 11,
+  faculte: 12,
+  domaine: 13,
+  mention: 14,
+  grade: 15,
+  niveau: 16,
+  parcours: 17,
+  annee: 18,
+};
+
+function resolveExcelColumnMap(rawRows: unknown[][]): {
+  colIndex: Record<string, number>;
+  detectedFields: string[];
+  unrecognizedHeaders: string[];
+  looksLikeHeader: boolean;
+} {
+  const headerRow = (rawRows[0] as unknown[]) ?? [];
+  const headerKeys = headerRow.map(normalizeHeaderKey);
+  const mappedFields = new Set(
+    headerKeys.map((hk) => HEADER_ALIASES[hk]).filter(Boolean)
+  );
+  const looksLikeHeader =
+    mappedFields.has('nom') &&
+    (mappedFields.has('mention') ||
+      mappedFields.has('faculte') ||
+      mappedFields.has('annee') ||
+      mappedFields.has('niveau'));
+
+  if (!looksLikeHeader) {
+    return {
+      colIndex: { ...LEGACY_POSITIONAL_COLUMNS },
+      detectedFields: Object.keys(LEGACY_POSITIONAL_COLUMNS),
+      unrecognizedHeaders: [],
+      looksLikeHeader: false,
+    };
+  }
+
+  const colIndex: Record<string, number> = {};
+  const claimedIndexes = new Set<number>();
+  const unrecognizedHeaders: string[] = [];
+
+  headerKeys.forEach((hk, idx) => {
+    if (!hk) return;
+    const mapped = HEADER_ALIASES[hk];
+    if (mapped) {
+      if (colIndex[mapped] === undefined) {
+        colIndex[mapped] = idx;
+        claimedIndexes.add(idx);
+      }
+    } else {
+      const rawLabel = String(headerRow[idx] ?? '').trim();
+      if (rawLabel) unrecognizedHeaders.push(rawLabel);
+    }
+  });
+
+  // Rétrocompatibilité IMPORTATION_Format.xlsx : la colonne H (index 7) a un en-tête vide mais contient le téléphone
+  if (
+    colIndex.telephone === undefined &&
+    !claimedIndexes.has(7) &&
+    headerKeys.length > 7 &&
+    headerKeys[7] === ''
+  ) {
+    colIndex.telephone = 7;
+  }
+
+  return {
+    colIndex,
+    detectedFields: Object.keys(colIndex),
+    unrecognizedHeaders,
+    looksLikeHeader: true,
+  };
+}
+
+export function inspectExcelHeaders(
+  buffer: ArrayBuffer,
+  sheetName?: string
+): ExcelHeaderInspection {
+  const wb = XLSX.read(buffer, { type: 'array' });
+  const targetSheet =
+    sheetName && wb.SheetNames.includes(sheetName) ? sheetName : wb.SheetNames[0];
+  if (!targetSheet) {
+    return { detectedFields: [], unrecognizedHeaders: [], looksLikeHeader: false };
+  }
+  const sheet = wb.Sheets[targetSheet];
+  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+  if (rawRows.length === 0) {
+    return { detectedFields: [], unrecognizedHeaders: [], looksLikeHeader: false };
+  }
+  const { detectedFields, unrecognizedHeaders, looksLikeHeader } =
+    resolveExcelColumnMap(rawRows);
+  return { detectedFields, unrecognizedHeaders, looksLikeHeader };
+}
 
 export function parseExcelWorkbook(
   buffer: ArrayBuffer,
@@ -3152,55 +3460,7 @@ export function parseExcelWorkbook(
   const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
   if (rawRows.length <= 1) return [];
 
-  // Default A..S column positions matching IMPORTATION_Format.xlsx
-  const colIndex: Record<string, number> = {
-    reference: 0,
-    numInscription: 1,
-    nom: 2,
-    prenom: 3,
-    dateNaissance: 4,
-    lieuNaissance: 5,
-    sexe: 6,
-    telephone: 7,
-    numeroCin: 8,
-    dateCin: 9,
-    lieuDelivrance: 10,
-    nationalite: 11,
-    faculte: 12,
-    domaine: 13,
-    mention: 14,
-    grade: 15,
-    niveau: 16,
-    parcours: 17,
-    annee: 18,
-    nomPere: -1,
-    nomMere: -1,
-  };
-
-  const headerRow = (rawRows[0] as unknown[]) ?? [];
-  const headerKeys = headerRow.map(normalizeHeaderKey);
-  const looksLikeHeader =
-    headerKeys.includes('nom') &&
-    (headerKeys.includes('mention') || headerKeys.includes('faculte') || headerKeys.includes('annee'));
-
-  if (looksLikeHeader) {
-    const claimedIndexes = new Set<number>();
-    const detected: Record<string, number> = {};
-    headerKeys.forEach((hk, idx) => {
-      const mapped = HEADER_ALIASES[hk];
-      if (mapped && detected[mapped] === undefined) {
-        detected[mapped] = idx;
-        claimedIndexes.add(idx);
-      }
-    });
-    for (const [k, idx] of Object.entries(detected)) {
-      colIndex[k] = idx;
-    }
-    // Keep column 7 as telephone if not claimed by anything else (IMPORTATION_Format.xlsx has blank H header)
-    if (detected.telephone === undefined && claimedIndexes.has(7)) {
-      colIndex.telephone = -1;
-    }
-  }
+  const { colIndex } = resolveExcelColumnMap(rawRows);
 
   // Build quick lookup indexes from existingDb for duplicate detection
   const cinToEtudiant = new Map<string, number>();
@@ -3252,11 +3512,11 @@ export function parseExcelWorkbook(
 
     const missing: string[] = [];
     if (!nom) missing.push('Nom');
-    if (!faculte) missing.push('Faculté');
+    if (!faculte) missing.push('Faculté/Institut');
     if (!domaine) missing.push('Domaine');
     if (!mention) missing.push('Mention');
     if (!niveau) missing.push('Niveau');
-    if (!annee) missing.push('Année');
+    if (!annee) missing.push('Année Universitaire');
 
     const normSex = normalizeSex(cell('sexe'));
     const sexe = normSex === 'Autre' ? 'M' : normSex;
@@ -3289,12 +3549,15 @@ export function parseExcelWorkbook(
       rowIndex: i + 1,
       reference: cell('reference'),
       numInscription: cell('numInscription'),
+      numInscriptionPedagogique: cell('numInscriptionPedagogique'),
       nom,
       prenom,
       dateNaissance,
       lieuNaissance: cell('lieuNaissance'),
       sexe,
       telephone: normalizePhone(rawVal('telephone')),
+      adresse: cell('adresse'),
+      email: cell('email'),
       numeroCin,
       dateCin: parseDateToISO(rawVal('dateCin')),
       lieuDelivrance: cell('lieuDelivrance'),
@@ -3416,6 +3679,8 @@ export function commitExcelImport(
         grade: r.grade.trim() || 'Licence',
       };
       next.niveaux.push(niv);
+    } else if (!niv.grade && r.grade.trim()) {
+      niv.grade = r.grade.trim();
     }
 
     // 5. Annee universitaire
@@ -3467,6 +3732,8 @@ export function commitExcelImport(
         if (!existingStudent.lieuNaissance && r.lieuNaissance)
           existingStudent.lieuNaissance = r.lieuNaissance;
         if (!existingStudent.telephone && r.telephone) existingStudent.telephone = r.telephone;
+        if (!existingStudent.adresse && r.adresse) existingStudent.adresse = r.adresse;
+        if (!existingStudent.email && r.email) existingStudent.email = r.email;
         if (!existingStudent.numeroCin && r.numeroCin) existingStudent.numeroCin = r.numeroCin;
         if (!existingStudent.dateCin && r.dateCin) existingStudent.dateCin = r.dateCin;
         if (!existingStudent.lieuDelivrance && r.lieuDelivrance)
@@ -3479,6 +3746,8 @@ export function commitExcelImport(
           existingIns.idNiveau = niv.id;
           existingIns.idParcours = idParcours;
           if (r.numInscription) existingIns.numInscription = r.numInscription;
+          if (r.numInscriptionPedagogique)
+            existingIns.numInscriptionPedagogique = r.numInscriptionPedagogique;
           if (r.reference) existingIns.reference = r.reference;
           updatedCount++;
           continue;
@@ -3496,6 +3765,8 @@ export function commitExcelImport(
         lieuNaissance: r.lieuNaissance,
         sexe: r.sexe,
         telephone: r.telephone,
+        adresse: r.adresse,
+        email: r.email,
         numeroCin: r.numeroCin,
         dateCin: r.dateCin,
         lieuDelivrance: r.lieuDelivrance,
@@ -3516,6 +3787,7 @@ export function commitExcelImport(
       idMention: men.id,
       idParcours,
       numInscription: r.numInscription,
+      numInscriptionPedagogique: r.numInscriptionPedagogique,
       reference: r.reference,
     });
     importedCount++;
@@ -3623,6 +3895,7 @@ export function verifyCertificateQuery(
     if (r.numeroCertificat && r.numeroCertificat.toLowerCase() === q) return true;
     if (r.reference.toLowerCase() === q) return true;
     if (r.numInscription.toLowerCase() === q) return true;
+    if (r.numInscriptionPedagogique && r.numInscriptionPedagogique.toLowerCase() === q) return true;
     if (normalizeCin(r.numeroCin).toLowerCase() === qNoSpaces && qNoSpaces.length >= 6) return true;
     if (String(r.idInscription) === q) return true;
     const fullName = `${r.nom} ${r.prenom}`.toLowerCase();
@@ -3633,25 +3906,29 @@ export function verifyCertificateQuery(
 export function downloadExcelTemplate(): void {
   const sampleRows = [
     {
-      Ref: '250001',
-      'Num Inscr': '000001',
-      NOM: 'RAKOTO',
-      'PRÉNOMS': 'Jean',
-      'DATE DE NAISSANCE': '15/03/2004',
-      Lieu_De_Naissance: 'Toliara',
-      SEXE: 'M',
-      Téléphone: '034 12 345 67',
+      'N° de référence': '250001',
+      'N° inscription pédagogique': 'PED-2025-0001',
+      'N° inscription administrative': '000001',
+      Nom: 'RAKOTO',
+      Prénom: 'Jean',
+      'Date de naissance': '15/03/2004',
+      'Lieu de naissance': 'Toliara',
+      Sexe: 'M',
       CIN: '501011012345',
-      'Date delivrance': '20/05/2022',
-      Lieu_Delivrance: 'Toliara I',
-      'NATIONALITÉ': 'MALAGASY',
-      Faculte: 'DEGS',
+      'Date de délivrance': '20/05/2022',
+      'Lieu de délivrance': 'Toliara I',
+      Téléphone: '034 12 345 67',
+      'Adresse exacte': 'Lot II A 14, Tsianengea, Toliara',
+      'E-mail': 'jean.rakoto@univ-toliara.mg',
+      'Nom de Père': 'RAKOTO Paul',
+      'Nom de Mère': 'RASOA Marie',
+      'Faculté/Institut': 'FACULTE DROIT ECONOMIE GESTION SOCIOLOGIE',
       Domaine: 'Sciences de la Société',
       Mention: 'DROIT',
+      Parcours: 'Droit Public',
       Grade: 'Licence',
       Niveau: 'L1',
-      Parcours: '',
-      Annee: '2025-2026',
+      'Année Universitaire': '2025-2026',
     },
   ];
   const ws = XLSX.utils.json_to_sheet(sampleRows);

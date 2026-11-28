@@ -249,6 +249,20 @@ export function StudentDetailModal({
               </div>
 
               <div>
+                <span className="text-slate-500">E-mail :</span>
+                <p className="font-medium text-slate-900 mt-0.5 break-all">
+                  {etudiant.email || 'Non renseigné'}
+                </p>
+              </div>
+
+              <div>
+                <span className="text-slate-500">Adresse exacte :</span>
+                <p className="font-medium text-slate-900 mt-0.5">
+                  {etudiant.adresse || 'Non renseignée'}
+                </p>
+              </div>
+
+              <div>
                 <span className="text-slate-500">CIN :</span>
                 <p className="font-mono font-medium text-slate-900 mt-0.5 tabular-nums">
                   {etudiant.numeroCin || 'Non renseigné'}
@@ -325,9 +339,14 @@ export function StudentDetailModal({
                       </div>
                       <p className="text-xs text-slate-600">
                         {ins.faculte} · {ins.domaine}
+                        {ins.grade ? ` · ${ins.grade}` : ''}
                       </p>
                       <p className="text-[11px] font-mono text-slate-500 tabular-nums">
-                        Réf : {ins.reference || '—'} · N° Inscr. : {ins.numInscription || '—'}
+                        Réf : {ins.reference || '—'} · Inscr. adm. :{' '}
+                        {ins.numInscription || '—'}
+                        {ins.numInscriptionPedagogique
+                          ? ` · Inscr. péd. : ${ins.numInscriptionPedagogique}`
+                          : ''}
                       </p>
                     </div>
 
