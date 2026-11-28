@@ -299,7 +299,7 @@ export default function App() {
         </header>
 
         {/* Viewport */}
-        <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto">
+        <main className="flex-1 p-4 sm:p-6 w-full">
           {activeView === 'accueil' && (
             <AccueilView
               db={db}
