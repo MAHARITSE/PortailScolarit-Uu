@@ -42,7 +42,6 @@ import {
   CardPhotoShape,
   CardQrPlacement,
   CertificateTokenEntry,
-  DocumentBorderStyle,
   DocumentFontFamily,
   DocumentKind,
   DocumentTemplate,
@@ -594,7 +593,7 @@ export function CertificateTemplateEditor({
               />
               {kind === 'certificat' && (
                 <Switch
-                  label="Logo secondaire"
+                  label="Logo de la faculté"
                   checked={template.header.showSecondaryLogo}
                   onChange={(v) =>
                     patchSection('header', { showSecondaryLogo: v })
@@ -639,7 +638,7 @@ export function CertificateTemplateEditor({
 
             {kind === 'certificat' && (
               <>
-                <Field label="Logo secondaire (URL ou fichier)">
+                <Field label="Logo de la faculté (secours si la faculté n’a pas de logo)">
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
@@ -1372,25 +1371,8 @@ export function CertificateTemplateEditor({
             </div>
           </EditorSection>
 
-          <EditorSection title="Cadre, marges & typographie">
+          <EditorSection title="Marges & typographie">
             <div className="grid grid-cols-2 gap-2">
-              {kind === 'certificat' && (
-                <Field label="Style de bordure">
-                  <select
-                    value={template.appearance.borderStyle}
-                    onChange={(e) =>
-                      patchSection('appearance', {
-                        borderStyle: e.target.value as DocumentBorderStyle,
-                      })
-                    }
-                    className={inputClass}
-                  >
-                    <option value="none">Aucune</option>
-                    <option value="thin">Fine</option>
-                    <option value="double">Double</option>
-                  </select>
-                </Field>
-              )}
               <Field label="Police globale">
                 <select
                   value={template.appearance.fontFamily}
@@ -1451,23 +1433,6 @@ export function CertificateTemplateEditor({
                       onChange={(e) =>
                         patchSection('layout', {
                           pagePaddingPx: Number(e.target.value),
-                        })
-                      }
-                      className="w-full accent-blue-600"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="block text-[11px] font-medium text-slate-600 mb-1">
-                      Épaisseur bordure ({layout.borderWidthPx} px)
-                    </span>
-                    <input
-                      type="range"
-                      min={1}
-                      max={8}
-                      value={layout.borderWidthPx}
-                      onChange={(e) =>
-                        patchSection('layout', {
-                          borderWidthPx: Number(e.target.value),
                         })
                       }
                       className="w-full accent-blue-600"
@@ -1935,57 +1900,10 @@ export function CertificateTemplateEditor({
           >
             {kind === 'certificat' ? (
               <>
+                <p className="text-[11px] text-blue-900 bg-blue-50 border border-blue-200 rounded-md px-3 py-2 inline-flex items-center gap-2">
+                  <span className="font-semibold">Automatique :</span> 1 destinataire = 1 certificat par page A4 · plusieurs destinataires = 2 par page A4
+                </p>
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="Certificats par feuille">
-                    <select
-                      value={template.print.perSheet}
-                      onChange={(e) =>
-                        patchSection('print', {
-                          perSheet: Number(e.target.value) === 2 ? 2 : 1,
-                        })
-                      }
-                      className={inputClass}
-                    >
-                      <option value={1}>1 · A4 complet</option>
-                      <option value={2}>2 · A5 (souche / archive)</option>
-                    </select>
-                  </Field>
-                  <Field label="Orientation">
-                    <select
-                      value={template.print.orientation}
-                      onChange={(e) =>
-                        patchSection('print', {
-                          orientation:
-                            e.target.value === 'landscape'
-                              ? 'landscape'
-                              : 'portrait',
-                        })
-                      }
-                      className={inputClass}
-                    >
-                      <option value="portrait">Portrait</option>
-                      <option value="landscape">Paysage</option>
-                    </select>
-                  </Field>
-                  {template.print.perSheet === 2 && (
-                    <Field label="Disposition">
-                      <select
-                        value={template.print.twoUpLayout}
-                        onChange={(e) =>
-                          patchSection('print', {
-                            twoUpLayout:
-                              e.target.value === 'stacked'
-                                ? 'stacked'
-                                : 'side-by-side',
-                          })
-                        }
-                        className={inputClass}
-                      >
-                        <option value="side-by-side">Côte à côte</option>
-                        <option value="stacked">Empilés</option>
-                      </select>
-                    </Field>
-                  )}
                   <Field label="Marges d’impression (mm)">
                     <input
                       type="number"
@@ -2001,22 +1919,11 @@ export function CertificateTemplateEditor({
                     />
                   </Field>
                 </div>
-                {template.print.perSheet === 2 && (
-                  <>
-                    <Switch
-                      label="Dupliquer le même élève (souche)"
-                      checked={template.print.duplicateSame}
-                      onChange={(v) =>
-                        patchSection('print', { duplicateSame: v })
-                      }
-                    />
-                    <Switch
-                      label="Ligne de découpe en pointillés"
-                      checked={template.print.cutLine}
-                      onChange={(v) => patchSection('print', { cutLine: v })}
-                    />
-                  </>
-                )}
+                <Switch
+                  label="Ligne de découpe en pointillés"
+                  checked={template.print.cutLine}
+                  onChange={(v) => patchSection('print', { cutLine: v })}
+                />
               </>
             ) : (
               <>

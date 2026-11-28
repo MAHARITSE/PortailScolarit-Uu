@@ -196,6 +196,8 @@ export function CertificateDocument({
 
   const refCode =
     record.reference || record.numInscription || String(record.idInscription);
+  // Le logo secondaire affiché est celui de la faculté/établissement de l'étudiant
+  const secondaryLogoSrc = record.faculteLogo || tpl.header.secondaryLogoUrl;
   const qrPayload = buildCertificateQrPayload(record, tpl, { token });
   const qrPx = Math.round(getQrPixelSize(tpl) * qrBoost);
 
@@ -969,10 +971,10 @@ export function CertificateDocument({
                 className="object-contain"
               />
             )}
-            {tpl.header.showSecondaryLogo && tpl.header.secondaryLogoUrl && (
+            {tpl.header.showSecondaryLogo && secondaryLogoSrc && (
               <img
-                src={tpl.header.secondaryLogoUrl}
-                alt="Logo secondaire"
+                src={secondaryLogoSrc}
+                alt={record.faculte ? `Logo ${record.faculte}` : 'Logo de la faculté'}
                 referrerPolicy="no-referrer"
                 style={{
                   width: `${secondaryLogoSize}px`,
@@ -1006,10 +1008,10 @@ export function CertificateDocument({
           </div>
           <div className="shrink-0 flex flex-col items-end gap-2">
             {qr.enabled && qr.position === 'header' && qrBlock}
-            {tpl.header.showSecondaryLogo && tpl.header.secondaryLogoUrl && (
+            {tpl.header.showSecondaryLogo && secondaryLogoSrc && (
               <img
-                src={tpl.header.secondaryLogoUrl}
-                alt="Logo secondaire"
+                src={secondaryLogoSrc}
+                alt={record.faculte ? `Logo ${record.faculte}` : 'Logo de la faculté'}
                 referrerPolicy="no-referrer"
                 style={{
                   width: `${secondaryLogoSize}px`,
@@ -1089,10 +1091,10 @@ export function CertificateDocument({
 
           <div className="w-24 shrink-0 flex flex-col items-center justify-center gap-2">
             {qr.enabled && qr.position === 'header' && qrBlock}
-            {tpl.header.showSecondaryLogo && tpl.header.secondaryLogoUrl && (
+            {tpl.header.showSecondaryLogo && secondaryLogoSrc && (
               <img
-                src={tpl.header.secondaryLogoUrl}
-                alt="Logo secondaire"
+                src={secondaryLogoSrc}
+                alt={record.faculte ? `Logo ${record.faculte}` : 'Logo de la faculté'}
                 referrerPolicy="no-referrer"
                 style={{
                   width: `${secondaryLogoSize}px`,
@@ -1794,13 +1796,6 @@ export function CertificateDocument({
     }
   };
 
-  const borderStyleValue =
-    appearance.borderStyle === 'none'
-      ? 'none'
-      : appearance.borderStyle === 'double'
-        ? `${Math.max(3, layout.borderWidthPx || 4)}px double ${appearance.accentColor}`
-        : `${Math.max(1, layout.borderWidthPx || 1)}px solid ${appearance.accentColor}`;
-
   const sectionOrder =
     layout.sectionOrder && layout.sectionOrder.length > 0
       ? layout.sectionOrder
@@ -1809,15 +1804,13 @@ export function CertificateDocument({
   return (
     <article
       ref={articleRef}
-      className={`text-slate-900 ${
+      className={`certificate-document text-slate-900 ${
         embedded
           ? 'p-0 shadow-none max-w-none'
-          : 'shadow-sm max-w-[794px] mx-auto print:p-4 print:shadow-none'
-      } print:border-0 print:break-inside-avoid relative overflow-hidden ${FONT_CLASS[appearance.fontFamily]}`}
+          : 'shadow-sm max-w-[794px] mx-auto print:shadow-none print:max-w-none print:mx-0'
+      } print:break-inside-avoid relative overflow-hidden ${FONT_CLASS[appearance.fontFamily]}`}
       style={{
         backgroundColor: layout.backgroundColor || '#ffffff',
-        border: embedded ? 'none' : borderStyleValue,
-        borderRadius: embedded ? undefined : `${layout.borderRadiusPx ?? 2}px`,
         padding: embedded
           ? undefined
           : `${Math.round((layout.pagePaddingPx ?? 36) * scale)}px`,

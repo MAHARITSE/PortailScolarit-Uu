@@ -38,6 +38,7 @@ import {
   getStudentLastInscription,
   getWorkbookSheetNames,
   importDatabaseJson,
+  loadDocumentTemplates,
   mergeDocumentTemplate,
   mergeDuplicateStudents,
   loadActiveAnnee,
@@ -425,16 +426,91 @@ describe('Personnalisation du certificat (champs, corps, QR, impression)', () =>
     assert.ok(mixed.includes(record.nom));
   });
 
-  it('conserve les réglages d’impression par défaut', () => {
-    assert.equal(tpl.print.perSheet, 1);
+  it('imprime par défaut 2 certificats par page (économie de papier)', () => {
+    assert.equal(tpl.print.perSheet, 2);
     assert.equal(tpl.print.orientation, 'portrait');
+    assert.equal(tpl.print.twoUpLayout, 'stacked');
+    assert.equal(tpl.print.duplicateSame, false);
     assert.equal(tpl.print.cutLine, true);
-    const twoUp = mergeDocumentTemplate('certificat', {
-      print: { perSheet: 2, twoUpLayout: 'stacked', duplicateSame: false },
-    } as never);
-    assert.equal(twoUp.print.perSheet, 2);
-    assert.equal(twoUp.print.twoUpLayout, 'stacked');
-    assert.equal(twoUp.print.duplicateSame, false);
+  });
+
+  it('migre les réglages d’impression jamais modifiés vers 2 par page', () => {
+    const store = new Map<string, string>();
+    store.set(
+      'portail_scolarite_uu_doc_templates_v1',
+      JSON.stringify({
+        certificat: {
+          print: {
+            perSheet: 1,
+            orientation: 'portrait',
+            twoUpLayout: 'side-by-side',
+            duplicateSame: true,
+            cutLine: true,
+            marginMm: 12,
+          },
+        },
+      })
+    );
+    const original = (globalThis as Record<string, unknown>).localStorage;
+    (globalThis as Record<string, unknown>).localStorage = {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => void store.set(k, String(v)),
+      removeItem: (k: string) => void store.delete(k),
+    };
+    try {
+      const loaded = loadDocumentTemplates();
+      assert.equal(loaded.certificat.print.perSheet, 2);
+      assert.equal(loaded.certificat.print.twoUpLayout, 'stacked');
+      assert.equal(loaded.certificat.print.duplicateSame, false);
+      // la migration est persistée
+      const persisted = JSON.parse(
+        store.get('portail_scolarite_uu_doc_templates_v1')!
+      );
+      assert.equal(persisted.certificat.print.perSheet, 2);
+    } finally {
+      if (original === undefined) {
+        delete (globalThis as Record<string, unknown>).localStorage;
+      } else {
+        (globalThis as Record<string, unknown>).localStorage = original;
+      }
+    }
+  });
+
+  it('respecte des réglages d’impression personnalisés (pas de migration)', () => {
+    const store = new Map<string, string>();
+    store.set(
+      'portail_scolarite_uu_doc_templates_v1',
+      JSON.stringify({
+        certificat: {
+          print: {
+            perSheet: 1,
+            orientation: 'portrait',
+            twoUpLayout: 'stacked',
+            duplicateSame: false,
+            cutLine: false,
+            marginMm: 8,
+          },
+        },
+      })
+    );
+    const original = (globalThis as Record<string, unknown>).localStorage;
+    (globalThis as Record<string, unknown>).localStorage = {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => void store.set(k, String(v)),
+      removeItem: (k: string) => void store.delete(k),
+    };
+    try {
+      const loaded = loadDocumentTemplates();
+      assert.equal(loaded.certificat.print.perSheet, 1);
+      assert.equal(loaded.certificat.print.marginMm, 8);
+      assert.equal(loaded.certificat.print.cutLine, false);
+    } finally {
+      if (original === undefined) {
+        delete (globalThis as Record<string, unknown>).localStorage;
+      } else {
+        (globalThis as Record<string, unknown>).localStorage = original;
+      }
+    }
   });
 
   it('retrouve un certificat par son numéro (y compris personnalisé) ou jeton QR', () => {

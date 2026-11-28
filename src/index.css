@@ -57,6 +57,35 @@
     padding: 0 !important;
   }
 
+  /* Le certificat s'imprime sans cadre, aligné en haut, contre la marge de page */
+  .certificate-document {
+    border: none !important;
+    margin: 0 !important;
+    max-width: none !important;
+    box-shadow: none !important;
+  }
+
+  /* 2 certificats par page (empilés) : pagination naturelle, chacun garde
+     exactement la taille d'une page simple */
+  .certificate-flow-item {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    /* Remplace la marge verticale de @page = 0 (supprime en-tête/pied navigateur) */
+    padding-top: 10mm;
+    margin-bottom: 6mm;
+  }
+
+  .certificate-flow-item.certificate-cut {
+    border-bottom: 1px dashed #94a3b8;
+    padding-bottom: 6mm;
+  }
+
+  .certificate-flow-item:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
   /* Les feuilles A4 du certificat gèrent elles-mêmes leurs marges */
   main {
     padding: 0 !important;

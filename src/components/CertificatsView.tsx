@@ -25,12 +25,10 @@ import {
   normalizeNiveauKey,
   registerCertificate,
   saveCertificateSettings,
-  saveDocumentTemplates,
   verifyCertificateQuery,
 } from '../services/database';
 import {
   CertificateSettings,
-  DocumentTemplate,
   EnrichedInscription,
   ScolariteDatabase,
 } from '../types/scolarite';
@@ -77,23 +75,9 @@ export function CertificatsView({
     loadCertificateSettings()
   );
   // Modèle de document défini dans la page Administration
-  const [docTemplates, setDocTemplates] = useState(() => loadDocumentTemplates());
+  const [docTemplates] = useState(() => loadDocumentTemplates());
   const template = docTemplates.certificat;
 
-  const updateTemplate = (patch: Partial<DocumentTemplate>) => {
-    setDocTemplates((prev) => {
-      const next = {
-        ...prev,
-        certificat: { ...prev.certificat, ...patch },
-      };
-      saveDocumentTemplates(next);
-      return next;
-    });
-  };
-
-  const updatePrint = (patch: Partial<DocumentTemplate['print']>) => {
-    updateTemplate({ print: { ...template.print, ...patch } });
-  };
   const [showSettings, setShowSettings] = useState(false);
 
   // Verifier modal
@@ -353,106 +337,7 @@ export function CertificatsView({
             </div>
           </div>
 
-          {/* Mise en page d'impression (1 ou 2 certificats par feuille A4) */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-md text-xs">
-            <span className="font-semibold text-slate-700 inline-flex items-center gap-1.5">
-              <Printer className="w-3.5 h-3.5 text-blue-600" />
-              Impression
-            </span>
-
-            <label className="flex items-center gap-1.5 text-slate-600">
-              Par feuille
-              <select
-                value={template.print.perSheet}
-                onChange={(e) =>
-                  updatePrint({ perSheet: Number(e.target.value) === 2 ? 2 : 1 })
-                }
-                className="px-2 py-1 border border-slate-300 rounded bg-white"
-              >
-                <option value={1}>1 certificat A4</option>
-                <option value={2}>2 certificats A5</option>
-              </select>
-            </label>
-
-            <label className="flex items-center gap-1.5 text-slate-600">
-              Orientation
-              <select
-                value={template.print.orientation}
-                onChange={(e) =>
-                  updatePrint({
-                    orientation:
-                      e.target.value === 'landscape' ? 'landscape' : 'portrait',
-                  })
-                }
-                className="px-2 py-1 border border-slate-300 rounded bg-white"
-              >
-                <option value="portrait">Portrait</option>
-                <option value="landscape">Paysage</option>
-              </select>
-            </label>
-
-            {template.print.perSheet === 2 && (
-              <>
-                <label className="flex items-center gap-1.5 text-slate-600">
-                  Disposition
-                  <select
-                    value={template.print.twoUpLayout}
-                    onChange={(e) =>
-                      updatePrint({
-                        twoUpLayout:
-                          e.target.value === 'stacked'
-                            ? 'stacked'
-                            : 'side-by-side',
-                      })
-                    }
-                    className="px-2 py-1 border border-slate-300 rounded bg-white"
-                  >
-                    <option value="side-by-side">Côte à côte</option>
-                    <option value="stacked">L’un au-dessus de l’autre</option>
-                  </select>
-                </label>
-
-                <label className="flex items-center gap-1.5 text-slate-600">
-                  Contenu
-                  <select
-                    value={template.print.duplicateSame ? 'same' : 'sequence'}
-                    onChange={(e) =>
-                      updatePrint({ duplicateSame: e.target.value === 'same' })
-                    }
-                    className="px-2 py-1 border border-slate-300 rounded bg-white"
-                  >
-                    <option value="same">Même élève (souche / archive)</option>
-                    <option value="sequence">Deux élèves différents</option>
-                  </select>
-                </label>
-
-                <label className="flex items-center gap-1.5 text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={template.print.cutLine}
-                    onChange={(e) => updatePrint({ cutLine: e.target.checked })}
-                    className="rounded border-slate-300 text-blue-600"
-                  />
-                  Ligne de découpe
-                </label>
-              </>
-            )}
-
-            <label className="flex items-center gap-1.5 text-slate-600">
-              Marges
-              <input
-                type="number"
-                min={0}
-                max={30}
-                value={template.print.marginMm}
-                onChange={(e) =>
-                  updatePrint({ marginMm: Number(e.target.value) || 0 })
-                }
-                className="w-16 px-2 py-1 border border-slate-300 rounded bg-white font-mono"
-              />
-              mm
-            </label>
-          </div>
+          {/* Impression : automatique — 1 destinataire = 1 par A4 · plusieurs = 2 par A4 */}
 
           {/* Certificate Settings Panel */}
           {showSettings && (
@@ -790,8 +675,10 @@ export function CertificatsView({
                       annee: previewItem.annee,
                       issuedAt: new Date().toISOString(),
                     });
-                    setPrintTargets([]);
-                    setTimeout(() => window.print(), 40);
+                    // Imprime via la feuille A4 dimensionnée, pas via l'article de prévisualisation
+                    setPrintTargets([previewItem]);
+                    setPreviewItem(null);
+                    setTimeout(() => window.print(), 80);
                   }}
                   className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 inline-flex items-center gap-1.5"
                 >
