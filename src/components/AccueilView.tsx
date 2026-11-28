@@ -1285,20 +1285,24 @@ export function AccueilView({
                 <button
                   type="button"
                   onClick={() => {
+                    const rec = certificateRow;
                     registerCertificate({
-                      token: certificateRow.certificateToken,
-                      idInscription: certificateRow.idInscription,
-                      idEtudiant: certificateRow.idEtudiant,
-                      numeroCertificat: certificateRow.numeroCertificat,
-                      nom: certificateRow.nom,
-                      prenom: certificateRow.prenom,
-                      mention: certificateRow.mention,
-                      niveau: certificateRow.niveau,
-                      annee: certificateRow.annee,
+                      token: rec.certificateToken,
+                      idInscription: rec.idInscription,
+                      idEtudiant: rec.idEtudiant,
+                      numeroCertificat: rec.numeroCertificat,
+                      nom: rec.nom,
+                      prenom: rec.prenom,
+                      mention: rec.mention,
+                      niveau: rec.niveau,
+                      annee: rec.annee,
                       issuedAt: new Date().toISOString(),
                     });
-                    setBatchPrintActive(false);
-                    window.print();
+                    // Imprime la feuille A4 dimensionnée (zoom auto), pas l'article de prévisualisation
+                    setBatchCertRecords([rec]);
+                    setBatchPrintActive(true);
+                    setCertificateRow(null);
+                    setTimeout(() => window.print(), 80);
                   }}
                   className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 inline-flex items-center gap-1.5 whitespace-nowrap"
                 >

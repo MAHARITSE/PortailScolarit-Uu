@@ -1555,7 +1555,7 @@ function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
     appearance: {
       accentColor: '#0f172a',
       textColor: '#0f172a',
-      borderStyle: 'thin',
+      borderStyle: 'none',
       watermarkText: 'UNIVERSITÉ DE TOLIARA',
       watermarkOpacity: 0.08,
       fontFamily: 'display',
@@ -1585,10 +1585,13 @@ function baseDocumentTemplate(kind: DocumentKind): DocumentTemplate {
       elementStyles: {},
     },
     print: {
-      perSheet: 1,
+      // Économie de papier : 2 certificats par feuille A4 (empilés, pointillés
+      // de découpe) par défaut. loadDocumentTemplates migre les réglages
+      // d'impression jamais modifiés (ancienne valeur par défaut : 1/page).
+      perSheet: 2,
       orientation: 'portrait',
-      twoUpLayout: 'side-by-side',
-      duplicateSame: true,
+      twoUpLayout: 'stacked',
+      duplicateSame: false,
       cutLine: true,
       marginMm: 12,
     },
@@ -1761,10 +1764,29 @@ export function loadDocumentTemplates(): DocumentTemplates {
     const raw = localStorage.getItem(DOC_TEMPLATES_KEY);
     if (!raw) return structuredClone(DEFAULT_DOCUMENT_TEMPLATES);
     const parsed = JSON.parse(raw) as Partial<DocumentTemplates>;
-    return {
-      certificat: mergeDocumentTemplate('certificat', parsed.certificat),
-      carte: mergeDocumentTemplate('carte', parsed.carte),
-    };
+    const carte = mergeDocumentTemplate('carte', parsed.carte);
+    const certificat = mergeDocumentTemplate('certificat', parsed.certificat);
+    // Migration unique : on passe les réglages d'impression jamais modifiés
+    // (ancienne valeur par défaut : 1 certificat/page) au nouveau défaut
+    // économique (2 par page, empilés). Tout réglage personnalisé est respecté.
+    const p = certificat.print;
+    const untouchedDefaultV1 =
+      p.perSheet === 1 &&
+      p.orientation === 'portrait' &&
+      p.twoUpLayout === 'side-by-side' &&
+      p.duplicateSame === true &&
+      p.cutLine === true &&
+      p.marginMm === 12;
+    if (untouchedDefaultV1) {
+      certificat.print = {
+        ...p,
+        perSheet: 2,
+        twoUpLayout: 'stacked',
+        duplicateSame: false,
+      };
+      saveDocumentTemplates({ certificat, carte });
+    }
+    return { certificat, carte };
   } catch {
     return structuredClone(DEFAULT_DOCUMENT_TEMPLATES);
   }
@@ -1796,7 +1818,7 @@ export const DOCUMENT_THEME_PRESETS: DocumentThemePreset[] = [
     id: 'cert-classique',
     kind: 'certificat',
     name: 'Classique officiel',
-    description: 'En-tête symétrique, cadre fin ardoise, phrase rédigée justifiée',
+    description: 'En-tête symétrique, phrase rédigée justifiée',
     patch: {
       texts: {
         ...DEFAULT_DOCUMENT_TEMPLATES.certificat.texts,
@@ -1806,7 +1828,7 @@ export const DOCUMENT_THEME_PRESETS: DocumentThemePreset[] = [
         ...DEFAULT_DOCUMENT_TEMPLATES.certificat.appearance,
         accentColor: '#0f172a',
         textColor: '#0f172a',
-        borderStyle: 'thin',
+        borderStyle: 'none',
       },
       body: {
         ...DEFAULT_DOCUMENT_TEMPLATES.certificat.body,
@@ -1830,14 +1852,14 @@ export const DOCUMENT_THEME_PRESETS: DocumentThemePreset[] = [
   {
     id: 'cert-solemn-serif',
     kind: 'certificat',
-    name: 'Solennel double cadre',
-    description: 'Double bordure bordeaux, police Serif académique, filigrane discret',
+    name: 'Solennel serif',
+    description: 'Police Serif académique, filigrane discret, accent bordeaux',
     patch: {
       appearance: {
         ...DEFAULT_DOCUMENT_TEMPLATES.certificat.appearance,
         accentColor: '#7f1d1d',
         textColor: '#1e293b',
-        borderStyle: 'double',
+        borderStyle: 'none',
       },
       blocks: {
         ...DEFAULT_DOCUMENT_TEMPLATES.certificat.blocks,
