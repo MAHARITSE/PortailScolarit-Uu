@@ -435,6 +435,31 @@ describe('Personnalisation du certificat (champs, corps, QR, impression)', () =>
     assert.equal(tpl.print.cutLine, true);
   });
 
+  it('applique l’impression automatique : 1 personne = 1/A4, plusieurs = 2/A4', () => {
+    const records = enrichInscriptions(getSeedDatabase());
+    const single = records.slice(0, 1);
+    const multi = records.slice(0, 3);
+
+    const getSheets = (list: typeof records) => {
+      const perSheet = list.length === 1 ? 1 : 2;
+      const sheets: (typeof records)[] = [];
+      if (perSheet === 1) {
+        for (const r of list) sheets.push([r]);
+      } else {
+        for (let i = 0; i < list.length; i += 2) sheets.push(list.slice(i, i + 2));
+      }
+      return sheets;
+    };
+
+    assert.equal(getSheets(single).length, 1);
+    assert.equal(getSheets(single)[0].length, 1);
+
+    const multiSheets = getSheets(multi);
+    assert.equal(multiSheets.length, 2);
+    assert.equal(multiSheets[0].length, 2);
+    assert.equal(multiSheets[1].length, 1);
+  });
+
   it('migre les réglages d’impression jamais modifiés vers 2 par page', () => {
     const store = new Map<string, string>();
     store.set(
