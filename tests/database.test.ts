@@ -39,6 +39,7 @@ import {
   getStudentLastInscription,
   getWorkbookSheetNames,
   importDatabaseJson,
+  inspectExcelHeaders,
   loadDocumentTemplates,
   mergeDocumentTemplate,
   mergeDuplicateStudents,
@@ -1126,6 +1127,167 @@ describe('Importation Excel multi-feuilles & Vérification QR', () => {
     assert.equal(commitRes.importedCount, 2);
     assert.equal(commitRes.nextDb.etudiants.length, 728); // only 1 new student created
     assert.equal(commitRes.nextDb.inscriptions.length, 729); // 2 new inscriptions
+  });
+
+  it('importe les 23 colonnes complètes (y compris adresse, e-mail, N° pédagogique et alias Drade) sans collision avec la nationalité', () => {
+    const db = getSeedDatabase();
+    const ws = XLSX.utils.json_to_sheet([
+      {
+        'N° de référence': 'REF-2025-8801',
+        'N° inscription pédagogique': 'PED-2025-0042',
+        'N° inscription administrative': 'ADM-2025-0042',
+        Nom: 'RAKOTOARISOA',
+        Prenom: 'Miora Nirina',
+        'Date de naissance': '15/06/2003',
+        'Lieu de naissance': 'Toliara',
+        Sexe: 'F',
+        CIN: '501012345678',
+        'Date de delivrance': '20/07/2021',
+        'Lieu de delivrance': 'Toliara I',
+        Téléphone: '034 11 223 34',
+        'Adresse exacte': 'Lot 45 B, Sanfily, Toliara',
+        'E-mail': 'miora.rakoto@univ-toliara.mg',
+        'Nom de Pere': 'RAKOTO Jean',
+        'Nom de mere': 'RASOA Marie',
+        'Faculté/Institut': 'Faculté des Sciences',
+        Domaine: 'Sciences et Technologies',
+        Mention: 'INFORMATIQUE',
+        Parcours: 'Génie Logiciel',
+        Drade: 'Licence',
+        Niveau: 'L2',
+        'Année Universitaire': '2025-2026',
+      },
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Complet23');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+
+    const inspection = inspectExcelHeaders(u8, 'Complet23');
+    assert.equal(inspection.looksLikeHeader, true);
+    assert.equal(inspection.detectedFields.length, 23);
+    assert.equal(inspection.unrecognizedHeaders.length, 0);
+
+    const parsed = parseExcelWorkbook(u8, 'Complet23', db);
+    assert.equal(parsed.length, 1);
+    const row = parsed[0];
+    assert.equal(row.status, 'new');
+    assert.equal(row.reference, 'REF-2025-8801');
+    assert.equal(row.numInscriptionPedagogique, 'PED-2025-0042');
+    assert.equal(row.numInscription, 'ADM-2025-0042');
+    assert.equal(row.nom, 'RAKOTOARISOA');
+    assert.equal(row.prenom, 'Miora Nirina');
+    assert.equal(row.dateNaissance, '2003-06-15');
+    assert.equal(row.lieuNaissance, 'Toliara');
+    assert.equal(row.sexe, 'F');
+    assert.equal(row.numeroCin, '501012345678');
+    assert.equal(row.dateCin, '2021-07-20');
+    assert.equal(row.lieuDelivrance, 'Toliara I');
+    assert.equal(row.telephone, '034 11 223 34');
+    assert.equal(row.adresse, 'Lot 45 B, Sanfily, Toliara');
+    assert.equal(row.email, 'miora.rakoto@univ-toliara.mg');
+    assert.equal(row.nomPere, 'RAKOTO Jean');
+    assert.equal(row.nomMere, 'RASOA Marie');
+    // Crucial: nationalite must default to MALAGASY and NEVER grab Téléphone at col index 11
+    assert.equal(row.nationalite, 'MALAGASY');
+    assert.equal(row.faculte, 'Faculté des Sciences');
+    assert.equal(row.domaine, 'Sciences et Technologies');
+    assert.equal(row.mention, 'INFORMATIQUE');
+    assert.equal(row.parcours, 'Génie Logiciel');
+    assert.equal(row.grade, 'Licence');
+    assert.equal(row.niveau, 'L2');
+    assert.equal(row.annee, '2025-2026');
+
+    const { nextDb, importedCount } = commitExcelImport(
+      db,
+      parsed,
+      'skip_existing_inscription'
+    );
+    assert.equal(importedCount, 1);
+
+    const enriched = enrichInscriptions(nextDb).find(
+      (r) => r.numInscriptionPedagogique === 'PED-2025-0042'
+    );
+    assert.ok(enriched, 'Inscription enrichie introuvable');
+    assert.equal(enriched.reference, 'REF-2025-8801');
+    assert.equal(enriched.numInscription, 'ADM-2025-0042');
+    assert.equal(enriched.adresse, 'Lot 45 B, Sanfily, Toliara');
+    assert.equal(enriched.email, 'miora.rakoto@univ-toliara.mg');
+    assert.equal(enriched.nomPere, 'RAKOTO Jean');
+    assert.equal(enriched.nomMere, 'RASOA Marie');
+    assert.equal(enriched.grade, 'Licence');
+    assert.equal(enriched.parcours, 'Génie Logiciel');
+
+    // Certificate variables & document row values expose the new fields
+    const vars = buildCertificateVariables(
+      enriched,
+      DEFAULT_DOCUMENT_TEMPLATES.certificat
+    );
+    assert.equal(vars.num_inscription_pedagogique, 'PED-2025-0042');
+    assert.equal(vars.num_inscription_administrative, 'ADM-2025-0042');
+    assert.equal(vars.adresse, 'Lot 45 B, Sanfily, Toliara');
+    assert.equal(vars.email, 'miora.rakoto@univ-toliara.mg');
+    assert.equal(
+      getDocumentRowValue(enriched, 'numInscriptionPedagogique'),
+      'PED-2025-0042'
+    );
+    assert.equal(getDocumentRowValue(enriched, 'adresse'), 'Lot 45 B, Sanfily, Toliara');
+    assert.equal(getDocumentRowValue(enriched, 'email'), 'miora.rakoto@univ-toliara.mg');
+
+    // Verification query matches numInscriptionPedagogique
+    const verified = verifyCertificateQuery(nextDb, 'PED-2025-0042');
+    assert.ok(verified.some((r) => r.idInscription === enriched.idInscription));
+
+    // Re-importing with update_student fills blank student fields & updates numInscriptionPedagogique
+    const seedStudent = nextDb.etudiants[0];
+    const seedIns = nextDb.inscriptions.find(
+      (i) => i.idEtudiant === seedStudent.id
+    )!;
+    const seedEnriched = enrichInscriptions(nextDb).find(
+      (r) => r.idInscription === seedIns.id
+    )!;
+    const wsUpdate = XLSX.utils.json_to_sheet([
+      {
+        'N° de référence': seedEnriched.reference,
+        'N° inscription pédagogique': 'PED-2025-0099',
+        'N° inscription administrative': seedEnriched.numInscription,
+        Nom: seedStudent.nom,
+        Prenom: seedStudent.prenom,
+        'Date de naissance': seedStudent.dateNaissance,
+        Sexe: seedStudent.sexe,
+        CIN: seedStudent.numeroCin,
+        'Adresse exacte': 'Lot 99, Tsianengea, Toliara',
+        'E-mail': 'etudiant.seed@univ-toliara.mg',
+        'Nom de Pere': 'PERE SEED',
+        'Nom de mere': 'MERE SEED',
+        'Faculté/Institut': seedEnriched.faculte,
+        Domaine: seedEnriched.domaine,
+        Mention: seedEnriched.mention,
+        Parcours:
+          seedEnriched.parcours === '— Aucun —' ? '' : seedEnriched.parcours,
+        Grade: seedEnriched.grade,
+        Niveau: seedEnriched.niveau,
+        'Année Universitaire': seedEnriched.annee,
+      },
+    ]);
+    const wbUpdate = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wbUpdate, wsUpdate, 'Maj');
+    const u8Update = XLSX.write(wbUpdate, {
+      type: 'array',
+      bookType: 'xlsx',
+    }) as ArrayBuffer;
+
+    const parsedUpdate = parseExcelWorkbook(u8Update, 'Maj', nextDb);
+    assert.equal(parsedUpdate[0].status, 'duplicate_inscription');
+    const updatedRes = commitExcelImport(nextDb, parsedUpdate, 'update_student');
+    assert.equal(updatedRes.updatedCount, 1);
+
+    const afterUpdate = enrichInscriptions(updatedRes.nextDb).find(
+      (r) => r.idInscription === seedIns.id
+    );
+    assert.ok(afterUpdate);
+    assert.equal(afterUpdate.adresse, 'Lot 99, Tsianengea, Toliara');
+    assert.equal(afterUpdate.email, 'etudiant.seed@univ-toliara.mg');
+    assert.equal(afterUpdate.numInscriptionPedagogique, 'PED-2025-0099');
   });
 
   it('vérifie un certificat par référence, numéro inscription ou payload QR complet', () => {

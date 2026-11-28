@@ -42,6 +42,8 @@ export interface Etudiant {
   lieuNaissance: string;
   sexe: 'M' | 'F' | string;
   telephone: string;
+  adresse?: string;
+  email?: string;
   numeroCin: string;
   dateCin: string; // YYYY-MM-DD or ''
   lieuDelivrance: string;
@@ -59,7 +61,10 @@ export interface Inscription {
   idAnnee: number;
   idMention: number;
   idParcours: number | null;
+  /** N° d'inscription administrative (matricule) */
   numInscription: string;
+  /** N° d'inscription pédagogique */
+  numInscriptionPedagogique?: string;
   reference: string;
   /** Valeurs des champs personnalisés définis dans l'administration */
   customValues?: Record<string, string>;
@@ -95,6 +100,7 @@ export interface EnrichedInscription {
   idParcours: number | null;
   reference: string;
   numInscription: string;
+  numInscriptionPedagogique: string;
   nom: string;
   prenom: string;
   dateNaissance: string;
@@ -102,6 +108,8 @@ export interface EnrichedInscription {
   sexe: string;
   sexeNormalized: NormalizedSex;
   telephone: string;
+  adresse: string;
+  email: string;
   numeroCin: string;
   dateCin: string;
   lieuDelivrance: string;

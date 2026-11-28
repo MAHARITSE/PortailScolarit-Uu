@@ -215,7 +215,7 @@ export function AccueilView({
 
       if (tokens.length > 0) {
         const haystack =
-          `${row.nom} ${row.prenom} ${row.reference} ${row.numInscription} ${row.numeroCin} ${row.mention} ${row.telephone}`.toLowerCase();
+          `${row.nom} ${row.prenom} ${row.reference} ${row.numInscription} ${row.numInscriptionPedagogique} ${row.numeroCin} ${row.mention} ${row.telephone} ${row.email} ${row.adresse}`.toLowerCase();
         if (!tokens.every((t) => haystack.includes(t))) return false;
       }
       return true;
@@ -1040,7 +1040,15 @@ export function AccueilView({
                           {row.reference || '—'}
                         </td>
                         <td className="px-3 py-2 font-mono text-xs text-slate-700 tabular-nums whitespace-nowrap">
-                          {row.numInscription || '—'}
+                          <div>{row.numInscription || '—'}</div>
+                          {row.numInscriptionPedagogique && (
+                            <div
+                              className="text-[10px] text-slate-500"
+                              title="N° inscription pédagogique"
+                            >
+                              Péd. {row.numInscriptionPedagogique}
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2 font-semibold text-slate-900 whitespace-nowrap">
                           <button

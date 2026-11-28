@@ -117,6 +117,12 @@ export function StudentInscriptionModal({
   const [telephone, setTelephone] = useState(
     activeEditing?.telephone ?? initialStudent?.telephone ?? ''
   );
+  const [adresse, setAdresse] = useState(
+    activeEditing?.adresse ?? initialStudent?.adresse ?? ''
+  );
+  const [email, setEmail] = useState(
+    activeEditing?.email ?? initialStudent?.email ?? ''
+  );
   const [numeroCin, setNumeroCin] = useState(
     activeEditing?.numeroCin ?? initialStudent?.numeroCin ?? ''
   );
@@ -139,6 +145,9 @@ export function StudentInscriptionModal({
   const [reference, setReference] = useState(activeEditing?.reference ?? '');
   const [numInscription, setNumInscription] = useState(
     activeEditing?.numInscription ?? ''
+  );
+  const [numInscriptionPedagogique, setNumInscriptionPedagogique] = useState(
+    activeEditing?.numInscriptionPedagogique ?? ''
   );
   const [numeroCertificat, setNumeroCertificat] = useState(
     activeEditing?.numeroCertificat ?? ''
@@ -207,10 +216,6 @@ export function StudentInscriptionModal({
     () => certificateFields.filter((f) => f.custom && f.enabled),
     [certificateFields]
   );
-  const isFieldEnabled = (id: string) => {
-    const def = certificateFields.find((f) => f.id === id);
-    return def ? def.enabled : true;
-  };
   const requiredField = (id: string) => {
     const def = certificateFields.find((f) => f.id === id);
     return Boolean(def?.required);
@@ -299,6 +304,8 @@ export function StudentInscriptionModal({
     setLieuNaissance(stu.lieuNaissance);
     setSexe(normalizeSex(stu.sexe) === 'F' ? 'F' : 'M');
     setTelephone(stu.telephone);
+    setAdresse(stu.adresse ?? '');
+    setEmail(stu.email ?? '');
     setNumeroCin(stu.numeroCin);
     setDateCin(stu.dateCin);
     setLieuDelivrance(stu.lieuDelivrance);
@@ -315,6 +322,7 @@ export function StudentInscriptionModal({
     // Nouveaux numéros pour la nouvelle année (ne pas recopier l'ancien certificat)
     setReference('');
     setNumInscription('');
+    setNumInscriptionPedagogique('');
     setNumeroCertificat('');
     setDateDelivrance('');
     setCertificateToken('');
@@ -353,6 +361,8 @@ export function StudentInscriptionModal({
     setLieuNaissance('');
     setSexe('M');
     setTelephone('');
+    setAdresse('');
+    setEmail('');
     setNumeroCin('');
     setDateCin('');
     setLieuDelivrance('');
@@ -363,6 +373,7 @@ export function StudentInscriptionModal({
 
     setReference('');
     setNumInscription('');
+    setNumInscriptionPedagogique('');
     setNumeroCertificat('');
     setDateDelivrance('');
     setCertificateToken('');
@@ -390,6 +401,8 @@ export function StudentInscriptionModal({
     setLieuNaissance(ins.lieuNaissance);
     setSexe(normalizeSex(ins.sexe) === 'F' ? 'F' : 'M');
     setTelephone(ins.telephone);
+    setAdresse(ins.adresse ?? '');
+    setEmail(ins.email ?? '');
     setNumeroCin(ins.numeroCin);
     setDateCin(ins.dateCin);
     setLieuDelivrance(ins.lieuDelivrance);
@@ -399,6 +412,7 @@ export function StudentInscriptionModal({
 
     setReference(ins.reference);
     setNumInscription(ins.numInscription);
+    setNumInscriptionPedagogique(ins.numInscriptionPedagogique ?? '');
     setNumeroCertificat(ins.numeroCertificat);
     setDateDelivrance(ins.dateDelivrance);
     setCertificateToken(ins.certificateToken);
@@ -725,6 +739,8 @@ export function StudentInscriptionModal({
           lieuNaissance: lieuNaissance.trim(),
           sexe,
           telephone: cleanedPhone,
+          adresse: adresse.trim(),
+          email: email.trim(),
           numeroCin: numeroCin.trim(),
           dateCin,
           lieuDelivrance: lieuDelivrance.trim(),
@@ -747,6 +763,7 @@ export function StudentInscriptionModal({
           idParcours:
             effectiveParcoursId === '' ? null : Number(effectiveParcoursId),
           numInscription: cleanNum,
+          numInscriptionPedagogique: numInscriptionPedagogique.trim(),
           reference: reference.trim(),
           ...issueIdentity(currentInsId, cleanNum),
         };
@@ -778,6 +795,8 @@ export function StudentInscriptionModal({
           lieuNaissance: lieuNaissance.trim(),
           sexe,
           telephone: cleanedPhone,
+          adresse: adresse.trim(),
+          email: email.trim(),
           numeroCin: numeroCin.trim(),
           dateCin,
           lieuDelivrance: lieuDelivrance.trim(),
@@ -797,6 +816,7 @@ export function StudentInscriptionModal({
         idParcours:
           effectiveParcoursId === '' ? null : Number(effectiveParcoursId),
         numInscription: cleanNum,
+        numInscriptionPedagogique: numInscriptionPedagogique.trim(),
         reference: reference.trim(),
         ...issueIdentity(reinscriptionId, cleanNum),
       });
@@ -819,6 +839,8 @@ export function StudentInscriptionModal({
       lieuNaissance: lieuNaissance.trim(),
       sexe,
       telephone: cleanedPhone,
+      adresse: adresse.trim(),
+      email: email.trim(),
       numeroCin: numeroCin.trim(),
       dateCin,
       lieuDelivrance: lieuDelivrance.trim(),
@@ -839,6 +861,7 @@ export function StudentInscriptionModal({
       idParcours:
         effectiveParcoursId === '' ? null : Number(effectiveParcoursId),
       numInscription: cleanNum,
+      numInscriptionPedagogique: numInscriptionPedagogique.trim(),
       reference: reference.trim(),
       ...issueIdentity(newInscriptionId, cleanNum),
     };
@@ -1410,38 +1433,60 @@ export function StudentInscriptionModal({
                 </select>
               </div>
 
-              {isFieldEnabled('telephone') && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Téléphone
-                  </label>
-                  <input
-                    type="text"
-                    value={telephone}
-                    onChange={(e) => setTelephone(e.target.value)}
-                    placeholder="Ex : 038 65 473 93"
-                    className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
-                  />
-                </div>
-              )}
-
-              {isFieldEnabled('numeroCin') && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Numéro CIN
-                  </label>
-                  <input
-                    type="text"
-                    value={numeroCin}
-                    onChange={(e) => setNumeroCin(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
-                  />
-                </div>
-              )}
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Téléphone
+                </label>
+                <input
+                  type="text"
+                  value={telephone}
+                  onChange={(e) => setTelephone(e.target.value)}
+                  placeholder="Ex : 038 65 473 93"
+                  className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Délivrance CIN
+                  E-mail
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Ex : etudiant@domaine.mg"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Adresse exacte
+                </label>
+                <input
+                  type="text"
+                  value={adresse}
+                  onChange={(e) => setAdresse(e.target.value)}
+                  placeholder="Ex : Lot II M 45, Toliara"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Numéro CIN
+                </label>
+                <input
+                  type="text"
+                  value={numeroCin}
+                  onChange={(e) => setNumeroCin(e.target.value)}
+                  className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Date de délivrance CIN
                 </label>
                 <input
                   type="date"
@@ -1463,46 +1508,41 @@ export function StudentInscriptionModal({
                 />
               </div>
 
-              {isFieldEnabled('nationalite') && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Nationalité
-                  </label>
-                  <input
-                    type="text"
-                    value={nationalite}
-                    onChange={(e) => setNationalite(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
-                  />
-                </div>
-              )}
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Nationalité
+                </label>
+                <input
+                  type="text"
+                  value={nationalite}
+                  onChange={(e) => setNationalite(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
 
-              {isFieldEnabled('filiation') && (
-                <>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Nom du père
-                    </label>
-                    <input
-                      type="text"
-                      value={nomPere}
-                      onChange={(e) => setNomPere(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Nom de la mère
-                    </label>
-                    <input
-                      type="text"
-                      value={nomMere}
-                      onChange={(e) => setNomMere(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
-                    />
-                  </div>
-                </>
-              )}
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Nom du père
+                </label>
+                <input
+                  type="text"
+                  value={nomPere}
+                  onChange={(e) => setNomPere(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Nom de la mère
+                </label>
+                <input
+                  type="text"
+                  value={nomMere}
+                  onChange={(e) => setNomMere(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
             </div>
           </div>
 
@@ -1523,28 +1563,26 @@ export function StudentInscriptionModal({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {isFieldEnabled('reference') && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Référence
-                    {requiredField('reference') && (
-                      <span className="text-red-600"> *</span>
-                    )}
-                  </label>
-                  <input
-                    ref={referenceInputRef}
-                    type="text"
-                    value={reference}
-                    onChange={(e) => setReference(e.target.value)}
-                    placeholder="Ex : 250001"
-                    className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
-                  />
-                </div>
-              )}
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  N° de référence
+                  {requiredField('reference') && (
+                    <span className="text-red-600"> *</span>
+                  )}
+                </label>
+                <input
+                  ref={referenceInputRef}
+                  type="text"
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                  placeholder="Ex : 250001"
+                  className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Numéro d&apos;inscription
+                  N° d&apos;inscription administrative
                 </label>
                 <input
                   ref={numInscriptionInputRef}
@@ -1552,6 +1590,21 @@ export function StudentInscriptionModal({
                   value={numInscription}
                   onChange={(e) => setNumInscription(e.target.value)}
                   placeholder="Ex : 000728"
+                  className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  N° d&apos;inscription pédagogique
+                </label>
+                <input
+                  type="text"
+                  value={numInscriptionPedagogique}
+                  onChange={(e) =>
+                    setNumInscriptionPedagogique(e.target.value)
+                  }
+                  placeholder="Ex : PED-2025-0001"
                   className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
                 />
               </div>

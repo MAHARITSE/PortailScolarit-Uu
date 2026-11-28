@@ -1,16 +1,28 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import {
+  ChangeEvent,
+  DragEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Database,
+  ImagePlus,
+  Loader2,
   Pencil,
   Plus,
   Printer,
   RefreshCw,
+  RotateCcw,
   Search,
   ShieldAlert,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import {
@@ -44,8 +56,9 @@ const TABLE_TABS: { key: TableEntityKey; label: string }[] = [
 ];
 
 const PAGE_SIZE = 50;
+const DEFAULT_FACULTE_LOGO = '/assets/logo-uu.jpg';
 
-/** Resize uploaded logo client-side to <= 240x240 JPEG to protect localStorage quota */
+/** Resize uploaded logo client-side to <= 240x240 WebP (preserving transparency) to protect localStorage quota */
 async function compressLogoFile(file: File): Promise<string> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -69,10 +82,17 @@ async function compressLogoFile(file: File): Promise<string> {
         resolve(dataUrl);
         return;
       }
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      const webp = canvas.toDataURL('image/webp', 0.86);
+      if (webp.startsWith('data:image/webp')) {
+        resolve(webp);
+        return;
+      }
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, w, h);
       ctx.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL('image/jpeg', 0.82));
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
     };
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
@@ -94,6 +114,11 @@ export function TablesSaisieView({
   > | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [studentPickerQuery, setStudentPickerQuery] = useState('');
+  const [logoFileName, setLogoFileName] = useState<string>('');
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [isDraggingLogo, setIsDraggingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
 
   // Delete confirmation with dependency check
   const [pendingDelete, setPendingDelete] = useState<{
@@ -194,11 +219,14 @@ export function TablesSaisieView({
     }
     setIsCreating(true);
     setStudentPickerQuery('');
+    setLogoFileName('');
+    setLogoError(null);
+    setIsDraggingLogo(false);
     const defaults: Record<TableEntityKey, Record<string, unknown>> = {
       annees: { annee: suggestNextAnneeLabel(db.annees) },
       facultes: {
         faculte: '',
-        logo: '/assets/logo-uu.jpg',
+        logo: DEFAULT_FACULTE_LOGO,
       },
       domaines: { domaine: '', idFaculte: db.facultes[0]?.id ?? 1 },
       mentions: { mention: '', idDomaine: db.domaines[0]?.id ?? 1 },
@@ -222,6 +250,8 @@ export function TablesSaisieView({
         dateCin: '',
         lieuDelivrance: '',
         telephone: '',
+        adresse: '',
+        email: '',
         nomPere: '',
         nomMere: '',
       },
@@ -232,6 +262,7 @@ export function TablesSaisieView({
         idNiveau: db.niveaux[0]?.id ?? 1,
         idParcours: null,
         numInscription: '',
+        numInscriptionPedagogique: '',
         reference: '',
         numeroCertificat: '',
         dateDelivrance: '',
@@ -244,6 +275,9 @@ export function TablesSaisieView({
   const openEdit = (row: Record<string, unknown>) => {
     setIsCreating(false);
     setStudentPickerQuery('');
+    setLogoFileName('');
+    setLogoError(null);
+    setIsDraggingLogo(false);
     setEditingRecord({ ...row });
   };
 
@@ -313,6 +347,8 @@ export function TablesSaisieView({
         prenom: String(sanitized.prenom ?? '').trim(),
         sexe: normSex === 'Autre' ? 'M' : normSex,
         telephone: normalizePhone(String(sanitized.telephone ?? '')),
+        adresse: String(sanitized.adresse ?? '').trim(),
+        email: String(sanitized.email ?? '').trim(),
         numeroCin: String(sanitized.numeroCin ?? '').trim(),
       };
     }
@@ -360,6 +396,11 @@ export function TablesSaisieView({
         idMention,
         idNiveau,
         idParcours: validParcours,
+        numInscription: String(sanitized.numInscription ?? '').trim(),
+        numInscriptionPedagogique: String(
+          sanitized.numInscriptionPedagogique ?? ''
+        ).trim(),
+        reference: String(sanitized.reference ?? '').trim(),
         numeroCertificat: String(sanitized.numeroCertificat ?? '').trim(),
         dateDelivrance: String(sanitized.dateDelivrance ?? '').trim(),
         certificateToken: String(sanitized.certificateToken ?? '')
@@ -394,11 +435,53 @@ export function TablesSaisieView({
     setEditingRecord(null);
   };
 
+  const processLogoFile = async (file: File) => {
+    if (!editingRecord) return;
+    if (!file.type.startsWith('image/')) {
+      setLogoError(
+        'Veuillez sélectionner un fichier image valide (PNG, JPG, WebP ou SVG).'
+      );
+      return;
+    }
+    setLogoError(null);
+    setLogoUploading(true);
+    try {
+      const compressed = await compressLogoFile(file);
+      setEditingRecord((prev) => (prev ? { ...prev, logo: compressed } : prev));
+      setLogoFileName(file.name);
+    } catch {
+      setLogoError("Impossible de charger ce logo. Essayez une autre image.");
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
   const handleLogoUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !editingRecord) return;
-    const compressed = await compressLogoFile(file);
-    setEditingRecord({ ...editingRecord, logo: compressed });
+    e.target.value = '';
+    if (!file) return;
+    await processLogoFile(file);
+  };
+
+  const handleLogoDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDraggingLogo) setIsDraggingLogo(true);
+  };
+
+  const handleLogoDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingLogo(false);
+  };
+
+  const handleLogoDrop = async (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingLogo(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    await processLogoFile(file);
   };
 
   // Filtered students for searchable student picker inside Inscriptions modal
@@ -579,12 +662,12 @@ export function TablesSaisieView({
                       break;
                     case 'etudiants':
                       primary = `${row.nom ?? ''} ${row.prenom ?? ''}`.trim();
-                      detail = `${row.sexe ?? ''} · Né(e) ${formatDateFR(String(row.dateNaissance ?? '')) || '—'} · CIN ${row.numeroCin || '—'} · Tél ${row.telephone || '—'}`;
+                      detail = `${row.sexe ?? ''} · Né(e) ${formatDateFR(String(row.dateNaissance ?? '')) || '—'} · CIN ${row.numeroCin || '—'} · Tél ${row.telephone || '—'}${row.email ? ` · ${row.email}` : ''}`;
                       break;
                     case 'inscriptions': {
                       const st = etudiantById.get(Number(row.idEtudiant));
                       primary = `${row.numInscription || row.reference || 'Sans N°'} — ${st ? `${st.nom} ${st.prenom}` : `Étudiant #${row.idEtudiant}`}`;
-                      detail = `${anneeById.get(Number(row.idAnnee)) ?? ''} · ${niveauById.get(Number(row.idNiveau)) ?? ''} ${mentionById.get(Number(row.idMention)) ?? ''} · Réf: ${row.reference || '—'}`;
+                      detail = `${anneeById.get(Number(row.idAnnee)) ?? ''} · ${niveauById.get(Number(row.idNiveau)) ?? ''} ${mentionById.get(Number(row.idMention)) ?? ''} · Réf: ${row.reference || '—'}${row.numInscriptionPedagogique ? ` · Péd: ${row.numInscriptionPedagogique}` : ''}`;
                       break;
                     }
                   }
@@ -595,7 +678,24 @@ export function TablesSaisieView({
                         #{id}
                       </td>
                       <td className="py-2.5 px-4 font-semibold text-slate-900">
-                        {primary}
+                        {activeTable === 'facultes' ? (
+                          <div className="flex items-center gap-2.5">
+                            {row.logo ? (
+                              <img
+                                src={String(row.logo)}
+                                alt={`Logo ${primary}`}
+                                className="h-8 w-8 rounded border border-slate-200 bg-white object-contain p-0.5 shrink-0"
+                              />
+                            ) : (
+                              <span className="h-8 w-8 rounded border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400 shrink-0">
+                                <ImagePlus className="w-3.5 h-3.5" />
+                              </span>
+                            )}
+                            <span>{primary}</span>
+                          </div>
+                        ) : (
+                          primary
+                        )}
                       </td>
                       <td className="py-2.5 px-4 text-slate-600">{detail}</td>
                       <td className="py-2.5 px-4 text-right no-print">
@@ -700,10 +800,10 @@ export function TablesSaisieView({
               )}
 
               {activeTable === 'facultes' && (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">
-                      Libellé / Nom de la Faculté *
+                      Libellé / Nom de la Faculté / Institut *
                     </label>
                     <input
                       required
@@ -714,26 +814,136 @@ export function TablesSaisieView({
                           faculte: e.target.value,
                         })
                       }
-                      className="w-full px-3 py-2 border border-slate-300 rounded"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
-                      Logo (compressé automatiquement à 240px max)
+                    <label className="block font-medium text-slate-700 mb-1.5">
+                      Logo de l&apos;établissement
                     </label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoUpload}
-                      className="w-full text-xs"
-                    />
-                    {Boolean(editingRecord.logo) && (
-                      <img
-                        src={String(editingRecord.logo)}
-                        alt="Aperçu logo"
-                        className="mt-2 h-14 w-14 object-contain rounded border border-slate-200 p-1"
+                    <div
+                      onDragOver={handleLogoDragOver}
+                      onDragLeave={handleLogoDragLeave}
+                      onDrop={handleLogoDrop}
+                      className={`rounded-lg border-2 border-dashed p-4 transition-colors ${
+                        isDraggingLogo
+                          ? 'border-blue-500 bg-blue-50/70'
+                          : 'border-slate-200 bg-slate-50/60 hover:border-slate-300'
+                      }`}
+                    >
+                      <input
+                        ref={logoInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        className="hidden"
                       />
-                    )}
+                      <div className="flex flex-col sm:flex-row items-center gap-4">
+                        <button
+                          type="button"
+                          onClick={() => logoInputRef.current?.click()}
+                          disabled={logoUploading}
+                          title="Cliquer pour choisir un logo"
+                          className="group relative h-20 w-20 shrink-0 rounded-lg border border-slate-200 bg-white shadow-xs flex items-center justify-center overflow-hidden hover:border-blue-400 transition-colors"
+                        >
+                          {logoUploading ? (
+                            <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+                          ) : editingRecord.logo ? (
+                            <>
+                              <img
+                                src={String(editingRecord.logo)}
+                                alt="Aperçu logo"
+                                className="h-full w-full object-contain p-1.5"
+                              />
+                              <span className="absolute inset-0 bg-slate-900/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <Upload className="w-4 h-4 text-white" />
+                              </span>
+                            </>
+                          ) : (
+                            <ImagePlus className="w-7 h-7 text-slate-300 group-hover:text-blue-500 transition-colors" />
+                          )}
+                        </button>
+
+                        <div className="flex-1 min-w-0 space-y-2 text-center sm:text-left">
+                          <div>
+                            <p className="text-xs font-semibold text-slate-800 truncate">
+                              {logoFileName
+                                ? `Fichier sélectionné : ${logoFileName}`
+                                : editingRecord.logo
+                                  ? String(editingRecord.logo) ===
+                                    DEFAULT_FACULTE_LOGO
+                                    ? 'Logo institutionnel par défaut'
+                                    : 'Logo personnalisé configuré'
+                                  : 'Aucun logo défini'}
+                            </p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              Glissez-déposez une image ici ou cliquez sur le
+                              bouton ci-dessous (PNG, JPG, WebP, SVG · optimisé
+                              automatiquement à 240 px max).
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                            <button
+                              type="button"
+                              disabled={logoUploading}
+                              onClick={() => logoInputRef.current?.click()}
+                              className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                            >
+                              <Upload className="w-3.5 h-3.5" />
+                              {editingRecord.logo
+                                ? 'Changer le logo'
+                                : 'Ajouter un logo'}
+                            </button>
+
+                            {String(editingRecord.logo ?? '') !==
+                              DEFAULT_FACULTE_LOGO && (
+                              <button
+                                type="button"
+                                disabled={logoUploading}
+                                onClick={() => {
+                                  setEditingRecord({
+                                    ...editingRecord,
+                                    logo: DEFAULT_FACULTE_LOGO,
+                                  });
+                                  setLogoFileName('');
+                                  setLogoError(null);
+                                }}
+                                className="px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-md inline-flex items-center gap-1.5 transition-colors"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                Par défaut
+                              </button>
+                            )}
+
+                            {Boolean(editingRecord.logo) && (
+                              <button
+                                type="button"
+                                disabled={logoUploading}
+                                onClick={() => {
+                                  setEditingRecord({
+                                    ...editingRecord,
+                                    logo: '',
+                                  });
+                                  setLogoFileName('');
+                                  setLogoError(null);
+                                }}
+                                className="px-2.5 py-1.5 text-xs font-medium text-red-700 bg-white hover:bg-red-50 border border-red-200 rounded-md inline-flex items-center gap-1.5 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Supprimer
+                              </button>
+                            )}
+                          </div>
+
+                          {logoError && (
+                            <p className="text-[11px] text-red-600 font-medium">
+                              {logoError}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1086,6 +1296,39 @@ export function TablesSaisieView({
                   </div>
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">
+                      E-mail
+                    </label>
+                    <input
+                      type="email"
+                      value={String(editingRecord.email ?? '')}
+                      onChange={(e) =>
+                        setEditingRecord({
+                          ...editingRecord,
+                          email: e.target.value,
+                        })
+                      }
+                      placeholder="exemple@domaine.mg"
+                      className="w-full px-3 py-2 border border-slate-300 rounded"
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Adresse exacte
+                    </label>
+                    <input
+                      value={String(editingRecord.adresse ?? '')}
+                      onChange={(e) =>
+                        setEditingRecord({
+                          ...editingRecord,
+                          adresse: e.target.value,
+                        })
+                      }
+                      placeholder="Lot, quartier, commune, ville..."
+                      className="w-full px-3 py-2 border border-slate-300 rounded"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
                       Nom du Père
                     </label>
                     <input
@@ -1264,7 +1507,22 @@ export function TablesSaisieView({
                     </div>
                     <div>
                       <label className="block font-medium text-slate-700 mb-1">
-                        N° Inscription
+                        N° de référence
+                      </label>
+                      <input
+                        value={String(editingRecord.reference ?? '')}
+                        onChange={(e) =>
+                          setEditingRecord({
+                            ...editingRecord,
+                            reference: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-medium text-slate-700 mb-1">
+                        N° inscription administrative
                       </label>
                       <input
                         value={String(editingRecord.numInscription ?? '')}
@@ -1277,18 +1535,21 @@ export function TablesSaisieView({
                         className="w-full px-3 py-2 border border-slate-300 rounded font-mono"
                       />
                     </div>
-                    <div>
+                    <div className="md:col-span-2">
                       <label className="block font-medium text-slate-700 mb-1">
-                        Référence quittance
+                        N° inscription pédagogique
                       </label>
                       <input
-                        value={String(editingRecord.reference ?? '')}
+                        value={String(
+                          editingRecord.numInscriptionPedagogique ?? ''
+                        )}
                         onChange={(e) =>
                           setEditingRecord({
                             ...editingRecord,
-                            reference: e.target.value,
+                            numInscriptionPedagogique: e.target.value,
                           })
                         }
+                        placeholder="Ex : PED-2025-0001"
                         className="w-full px-3 py-2 border border-slate-300 rounded font-mono"
                       />
                     </div>
