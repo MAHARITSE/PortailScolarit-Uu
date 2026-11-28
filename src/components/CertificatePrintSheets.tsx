@@ -18,8 +18,8 @@ const DESIGN_WIDTH_PX = 794;
 
 /**
  * Impression A4 des certificats, entièrement automatique :
- * - 1 certificat sélectionné → 1 par page A4
- * - plusieurs certificats    → 2 par page A4, empilés
+ * - 1 personne sélectionnée → 1 par page A4 (1/A4)
+ * - plusieurs personnes      → 2 par page A4, empilés (2/A4)
  *
  * Chaque certificat est rendu exactement à la même taille que sur une page
  * complète (aucune mise à l'échelle forcée), avec pagination naturelle.
@@ -43,8 +43,6 @@ export function CertificatePrintSheets({
       el.id = styleId;
       document.head.appendChild(el);
     }
-    // Marges verticales à 0 : le navigateur n'a alors plus d'espace pour
-    // imprimer son en-tête (URL, n° de page) et son pied (date, titre).
     el.textContent = `@media print { @page { size: A4 ${print.orientation}; margin: 0 12mm; } }`;
     return () => {
       const node = document.getElementById(styleId);
@@ -52,24 +50,45 @@ export function CertificatePrintSheets({
     };
   }, [print.orientation, margin]);
 
+  // Impression automatique : 1 personne = 1/A4, plusieurs = 2/A4
+  const effectivePerSheet = records.length === 1 ? 1 : 2;
+
+  const sheets: EnrichedInscription[][] = [];
+  if (effectivePerSheet === 1) {
+    for (const record of records) {
+      sheets.push([record]);
+    }
+  } else {
+    for (let i = 0; i < records.length; i += 2) {
+      sheets.push(records.slice(i, i + 2));
+    }
+  }
+
   return (
     <div className="certificate-flow bg-white">
-      {records.map((record, index) => (
+      {sheets.map((sheetRecords, sheetIndex) => (
         <div
-          key={`${record.idInscription}-${index}`}
-          className={`certificate-flow-item${
-            print.cutLine && index < records.length - 1
-              ? ' certificate-cut'
-              : ''
-          }`}
-          style={{ zoom: flowZoom }}
+          key={`sheet-${sheetIndex}`}
+          className="certificate-sheet-container print-page-break"
         >
-          <CertificateDocument
-            record={record}
-            settings={settings}
-            template={template}
-            token={record.certificateToken}
-          />
+          {sheetRecords.map((record, index) => (
+            <div
+              key={`${record.idInscription}-${index}`}
+              className={`certificate-flow-item${
+                print.cutLine && sheetRecords.length === 2 && index === 0
+                  ? ' certificate-cut'
+                  : ''
+              }`}
+              style={{ zoom: flowZoom }}
+            >
+              <CertificateDocument
+                record={record}
+                settings={settings}
+                template={template}
+                token={record.certificateToken}
+              />
+            </div>
+          ))}
         </div>
       ))}
     </div>
